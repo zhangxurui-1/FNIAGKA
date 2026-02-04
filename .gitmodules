@@ -1,0 +1,3 @@
+[submodule "deps/miracl"]
+	path = deps/miracl
+	url = git@github.com:miracl/MIRACL.git

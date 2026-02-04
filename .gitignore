@@ -8,6 +8,7 @@
 *.dylib
 *.dll
 *.exe
+*.out
 
 # CMake
 CMakeFiles/
@@ -23,3 +24,6 @@ compile_commands.json
 
 # logs
 *.log
+
+config
+.cache
