@@ -20,8 +20,11 @@
 
 */
 
+#include "FNIAGKA/proto.h"
 #include <ctime>
 #include <iostream>
+#include <memory>
+#include <vector>
 
 //********* CHOOSE JUST ONE OF THESE **********
 // #define MR_PAIRING_SS2  // AES-80 or AES-128 security GF(2^m) curve
@@ -33,72 +36,26 @@
 // #define AES_SECURITY 128
 //*********************************************
 
-#include "pairing_1.h"
-
-#define N 20 // total number of potential recipients
-
-#define NS 5                  // number of recipients for this broadcast
-int S[NS] = {2, 4, 5, 6, 14}; // group of recipients
-#define PERSON 6              // sample recipient
-
-int main() {
-    PFC pfc(AES_SECURITY); // initialise pairing-friendly curve
-    time_t seed;
-
-    int i, j;
-    G1 g, v, gi[2 * N], d[N], Hdr[2], s;
-    GT K;
-    Big alpha, gamma, t;
-
-    time(&seed); // initialise (insecure!) random numbers
-    irand((long)seed);
-
-    // setup
-    pfc.random(g);
-    pfc.random(alpha);
-    gi[0] = pfc.mult(g, alpha);
-    for (i = 1; i < 2 * N; i++)
-        gi[i] = pfc.mult(gi[i - 1], alpha);
-
-    pfc.random(gamma);
-    v = pfc.mult(g, gamma);
-
-    for (i = 0; i < N; i++)
-        d[i] = pfc.mult(gi[i], gamma);
-
-    // encrypt to group S using Public Key
-    pfc.random(t);
-    K = pfc.power(pfc.pairing(gi[N - 1], gi[0]), t);
-    Hdr[0] = pfc.mult(g, t);
-    Hdr[1] = v;
-    for (i = 0; i < NS; i++) {
-        j = S[i];
-        Hdr[1] = Hdr[1] + gi[N - j];
+int main(int argc, char *argv[]) {
+    if (argc != 3) {
+        std::cout << "Usage: " << argv[0] << " <security_level> <max_group_size>" << std::endl;
+        return 1;
     }
-    Hdr[1] = pfc.mult(Hdr[1], t);
-    cout << "Encryption Key= " << pfc.hash_to_aes_key(K) << endl;
-
-    // decrypt by PERSON
-
-    s = d[PERSON - 1];
-    for (i = 0; i < NS; i++) {
-        j = S[i];
-        if (j == PERSON)
-            continue;
-        s = s + gi[N - j + PERSON];
+    int security_level = std::stoi(argv[1]);
+    int max_group_size = std::stoi(argv[2]);
+    if (security_level != 80 && security_level != 128) {
+        std::cout << "security_level must be 80 or 128" << std::endl;
+        return 1;
     }
-    Hdr[0] = -Hdr[0]; // to avoid division
-    G1 *g1[2], *g2[2];
-    g1[0] = &gi[PERSON - 1];
-    g1[1] = &s;
-    g2[0] = &Hdr[1];
-    g2[1] = &Hdr[0];
 
-    K = pfc.multi_pairing(2, g2, g1);
+    auto pp = FNIAGKA::Setup(security_level, max_group_size);
 
-    //	K=pfc.pairing(gi[PERSON-1],Hdr[1]);
-    //	K=K*pfc.pairing(s,Hdr[0]);
-    cout << "Decryption Key= " << pfc.hash_to_aes_key(K) << endl;
+    std::vector<std::shared_ptr<PNPublicKey>> pn_pks(3);
+    for (int i = 0; i < 3; i++) {
+        pn_pks[i] = FNIAGKA::PNGen(pp);
+    }
 
-    return 0;
+    auto omega = FNIAGKA::Negotiate(pp, pn_pks);
+
+    std::cout << "DONE" << std::endl;
 }
