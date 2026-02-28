@@ -1,18 +1,17 @@
 #pragma once
 
-#include <memory>
 template <typename T>
-
-class Singleton {
+class Singleton
+{
+  public:
     Singleton() = delete;
     ~Singleton() = delete;
-    std::shared_ptr<T> GetInstance() {
-        if (instance_ == nullptr) {
-            instance_ = std::make_shared<T>();
-        }
-        return instance_;
-    }
+    Singleton(const Singleton&) = delete;
+    Singleton& operator=(const Singleton&) = delete;
 
-  private:
-    static std::shared_ptr<T> instance_;
+    static T& GetInstance()
+    {
+        static T instance;
+        return instance;
+    }
 };

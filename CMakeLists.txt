@@ -29,6 +29,7 @@ set_target_properties(MIRACL-cpp PROPERTIES
 add_executable(main
     src/main.cc
     src/proto.cc
+    src/metric.cc
 )
 
 target_include_directories(main PRIVATE
