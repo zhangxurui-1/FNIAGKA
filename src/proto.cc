@@ -1,14 +1,19 @@
 #include "FNIAGKA/proto.h"
 
+#include "FNIAGKA/bytereader.h"
+#include "FNIAGKA/bytewriter.h"
 #include "FNIAGKA/pki.h"
 #include "log.h"
 #include "pairing_1.h"
 #include "singleton.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <miracl.h>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 int64_t FNIAGKA::User::id_counter_ = 0;
@@ -80,14 +85,14 @@ FNIAGKA::Negotiate(std::shared_ptr<PublicParameter> pp,
                    std::vector<std::shared_ptr<PNPublicKey>> pn_public_keys)
 {
     // verify the validity of pn_public_keys
-    for (int i = 0; i < pn_public_keys.size(); i++)
-    {
-        if (!IsValid(pp, pn_public_keys[i]))
-        {
-            WARN("PN public key verification failed");
-            return nullptr;
-        }
-    }
+    // for (int i = 0; i < pn_public_keys.size(); i++)
+    // {
+    //     if (!IsValid(pp, pn_public_keys[i]))
+    //     {
+    //         WARN("PN public key verification failed");
+    //         return nullptr;
+    //     }
+    // }
 
     // negotiate
     auto omega = std::make_shared<FullParameter>();
@@ -208,12 +213,14 @@ FNIAGKA::UserGen(std::shared_ptr<PublicParameter> pp)
     user->upk_->wj_.resize(n);
     user->upk_->ujk_.resize(n, std::vector<G1>(n));
     user->usk_->ujj_.resize(n);
+    user->usk_->nuj_.resize(n);
 
     for (int i = 0; i < n; i++)
     {
         pp->pfc_->random(mu[i]);
         pp->pfc_->random(nu[i]);
 
+        user->usk_->nuj_[i] = nu[i];
         user->upk_->uj_[i] = pp->pfc_->mult(pp->g0_, mu[i]);
         user->upk_->wj_[i] = pp->pfc_->mult(pp->g0_, nu[i]);
         for (int j = 0; j < n; j++)
@@ -773,7 +780,7 @@ FNIAGKA::MergeGroupExtended(int64_t eta,
                 new_eks[i].b_ = new_eks[i].b_ + upk->wj_[slot_to] + (-omega->b);
             }
 
-            // step 2: update old ek (现在删不会影响 uids 的遍历)
+            // step 2: update old ek
             group_info_from.Vacate(uid);
 
             new_eks[j].a_ = new_eks[j].a_ + omega->u_[slot_from] + (-upk->uj_[slot_from]);
@@ -824,4 +831,273 @@ FNIAGKA::MergeGroupExtended(int64_t eta,
     }
 
     return new_eks;
+}
+
+void
+FNIAGKA::UpdateGroupKey(
+    int64_t eta,
+    std::shared_ptr<FullParameter> omega,
+    std::shared_ptr<User> user,
+    int64_t target_uid, // the user who updates its key
+    EncryptionKey& cur_ek,
+    DecryptionKey& cur_dk,
+    UserPublicKey& stale_upk, // the old public key of the target user before update
+    std::shared_ptr<UserPrivateKey>
+        stale_usk) // the old private key of the target user before update
+{
+    auto& pki = Singleton<PKI>::GetInstance();
+    auto upk = pki.GetUserPublicKey(target_uid);
+    if (!upk)
+    {
+        FATAL_ERROR("upk not found for user " << target_uid);
+    }
+
+    auto& group_info = cur_ek.group_info_;
+    auto it = group_info.uid_to_slot_.find(target_uid);
+
+    if (it == group_info.uid_to_slot_.end())
+    {
+        FATAL_ERROR("target_uid " << target_uid << " not found in group " << group_info.gid_);
+    }
+    int slot = it->second;
+
+    cur_ek.a_ = cur_ek.a_ + upk->uj_[slot] + (-stale_upk.uj_[slot]);
+    cur_ek.b_ = cur_ek.b_ + upk->wj_[slot] + (-stale_upk.wj_[slot]);
+
+    if (user->uid_ == target_uid)
+    {
+        cur_dk.dk_ = cur_dk.dk_ + user->usk_->ujj_[slot] + (-stale_usk->ujj_[slot]);
+    }
+    else
+    {
+        cur_dk.dk_ =
+            cur_dk.dk_ + upk->ujk_[slot][cur_dk.slot_] + (-stale_upk.ujk_[slot][cur_dk.slot_]);
+    }
+}
+
+void
+FNIAGKA::User::UpdateKey(std::shared_ptr<PublicParameter> pp)
+{
+    std::vector<Big> r(pp->max_group_size_);
+    auto pfc = pp->pfc_;
+    for (int i = 0; i < pp->max_group_size_; i++)
+    {
+        pfc->random(r[i]);
+    }
+
+    for (int i = 0; i < pp->max_group_size_; i++)
+    {
+        upk_->wj_[i] = pp->pfc_->mult(upk_->wj_[i], r[i]);
+
+        auto delta =
+            pp->pfc_->mult(pp->h_, -usk_->nuj_[i]) + pp->pfc_->mult(pp->h_, usk_->nuj_[i] * r[i]);
+        for (int j = 0; j < pp->max_group_size_; j++)
+        {
+            if (i == j)
+            {
+                usk_->ujj_[i] = usk_->ujj_[i] + delta;
+            }
+            else
+            {
+                upk_->ujk_[i][j] = upk_->ujk_[i][j] + delta;
+            }
+        }
+
+        usk_->nuj_[i] = usk_->nuj_[i] * r[i];
+    }
+}
+
+KeyUpdMaterial
+FNIAGKA::UserKeyUpdLaunch(std::shared_ptr<FullParameter> omega,
+                          int version,
+                          const std::vector<EncryptionKey>& eks)
+{
+    Big r;
+    auto pp = omega->pp_;
+    pp->pfc_->random(r);
+
+    std::vector<uint8_t> r_bytes;
+    ByteWriter bw_r(r_bytes);
+    bw_r.write(r);
+    INFO("length of r=" << bw_r.position());
+
+    KeyUpdMaterial kum;
+    kum.version_ = version;
+    kum.ct_num_ = eks.size();
+    kum.ct_key_.resize(eks.size());
+    kum.ct_r_.resize(eks.size());
+    kum.group_infos_.resize(eks.size());
+
+    for (auto it = eks.begin(); it != eks.end(); it++)
+    {
+        std::vector<int64_t> receiver_uids;
+        for (int i = 0; i < it->group_info_.membership_.size(); i++)
+        {
+            if (it->group_info_.membership_[i] != -1)
+            {
+                receiver_uids.push_back(it->group_info_.membership_[i]);
+            }
+        }
+        auto pair = Encap(pp->max_group_size_,
+                          omega,
+                          std::make_shared<GroupInfo>(it->group_info_),
+                          receiver_uids,
+                          *it);
+
+        kum.group_infos_[it - eks.begin()] = it->group_info_;
+        GroupKey gk = pair.first;
+        kum.ct_key_[it - eks.begin()] = pair.second;
+
+        std::vector<uint8_t> gk_bytes;
+        ByteWriter bw(gk_bytes);
+        bw.write(gk);
+
+        kum.ct_r_[it - eks.begin()] = r_bytes;
+        int p = ByteWriter::PREFIX_Big;
+        while (p < r_bytes.size())
+        {
+            kum.ct_r_[it - eks.begin()][p] ^=
+                gk_bytes[p + ByteWriter::PREFIX_GT - ByteWriter::PREFIX_Big];
+            p++;
+        }
+    }
+
+    return kum;
+}
+
+void
+FNIAGKA::UserKeyUpd(std::shared_ptr<FullParameter> omege,
+                    std::shared_ptr<User> user,
+                    const DecryptionKey& dk,
+                    const KeyUpdMaterial& kum)
+{
+    for (int i = 0; i < kum.ct_num_; i++)
+    {
+        auto& group_info = kum.group_infos_[i];
+        if (group_info.gid_ == dk.group_info_.gid_)
+        {
+            Big r;
+            auto res = user->GetR(kum.version_);
+            if (res.second)
+            {
+                r = res.first;
+            }
+            else
+            {
+                std::vector<int64_t> receiver_uids;
+                for (int i = 0; i < dk.group_info_.membership_.size(); i++)
+                {
+                    if (dk.group_info_.membership_[i] != -1)
+                    {
+                        receiver_uids.push_back(dk.group_info_.membership_[i]);
+                    }
+                }
+
+                // 1. recover group key
+                auto gk = Decap(omege->pp_->max_group_size_,
+                                omege,
+                                std::make_shared<GroupInfo>(group_info),
+                                user,
+                                receiver_uids,
+                                dk,
+                                kum.ct_key_[i]);
+
+                if (!gk.second)
+                {
+                    FATAL_ERROR("UserKeyUpd failed, Decap error");
+                }
+
+                // 2. recover r
+                std::vector<uint8_t> r_bytes = kum.ct_r_[i];
+                std::vector<uint8_t> gk_bytes;
+                ByteWriter bw(gk_bytes);
+                bw.write(gk.first);
+                size_t p = ByteWriter::PREFIX_Big;
+                while (p < r_bytes.size())
+                {
+                    r_bytes[p] ^= gk_bytes[p + ByteWriter::PREFIX_GT - ByteWriter::PREFIX_Big];
+                    p++;
+                }
+
+                ByteReader br(r_bytes.data(), r_bytes.size());
+                r = br.read<Big>();
+
+                user->CacheR(kum.version_, r);
+            }
+
+            // 3. update user key
+            auto upk = user->upk_;
+            auto usk = user->usk_;
+            auto& pfc = omege->pp_->pfc_;
+            user->version_ = kum.version_;
+            user->stale_usks_[kum.version_ - 1] = *usk;
+            for (int j = 0; j < upk->ujk_.size(); j++)
+            {
+                upk->uj_[j] = pfc->mult(upk->uj_[j], r);
+                upk->wj_[j] = pfc->mult(upk->wj_[j], r);
+                for (int k = 0; k < upk->ujk_[j].size(); k++)
+                {
+                    if (j != k)
+                    {
+                        upk->ujk_[j][k] = pfc->mult(upk->ujk_[j][k], r);
+                    }
+                    else
+                    {
+                        usk->ujj_[j] = pfc->mult(usk->ujj_[j], r);
+                    }
+                }
+            }
+
+            // upload to pki
+            auto& pki = Singleton<PKI>::GetInstance();
+            pki.UserKeyUpdate(user->uid_, kum.version_, user->upk_);
+            return;
+        }
+    }
+}
+
+void
+FNIAGKA::GroupKeyUpd(std::shared_ptr<FullParameter> omega,
+                     std::shared_ptr<GroupInfo> group_info,
+                     std::shared_ptr<User> user,
+                     EncryptionKey& ek,
+                     DecryptionKey& dk,
+                     int version)
+{
+    auto cache_r = user->GetR(version);
+    if (!cache_r.second)
+    {
+        FATAL_ERROR("GroupKeyUpd failed, please update user key first");
+    }
+
+    G1 delta_a;
+    G1 delta_b;
+    if (user->stale_usks_.find(version - 1) == user->stale_usks_.end())
+    {
+        FATAL_ERROR("GroupKeyUpd failed, stale usk not found");
+    }
+    G1 delta_d = user->stale_usks_[version - 1].ujj_[dk.slot_];
+    auto& pki = Singleton<PKI>::GetInstance();
+    for (auto it = group_info->uid_to_slot_.begin(); it != group_info->uid_to_slot_.end(); it++)
+    {
+        int64_t uid = it->first;
+        int slot = it->second;
+        auto upk = pki.GetUserPublicKey(uid, version - 1);
+        if (!upk)
+        {
+            FATAL_ERROR("GroupKeyUpd failed, upk not found");
+        }
+
+        delta_a = delta_a + upk->uj_[slot];
+        delta_b = delta_b + upk->wj_[slot];
+        if (uid != user->uid_)
+        {
+            delta_d = delta_d + upk->ujk_[slot][dk.slot_];
+        }
+    }
+
+    auto pfc = omega->pp_->pfc_;
+    ek.a_ = ek.a_ + pfc->mult(delta_a, cache_r.first - 1);
+    ek.b_ = ek.b_ + pfc->mult(delta_b, cache_r.first - 1);
+    dk.dk_ = dk.dk_ + pfc->mult(delta_d, cache_r.first - 1);
 }

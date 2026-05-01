@@ -24,7 +24,10 @@ compile_commands.json
 
 # logs
 *.log
-log/*
+log/
 
 config
 .cache
+
+tools/**
+!tools/*.cc

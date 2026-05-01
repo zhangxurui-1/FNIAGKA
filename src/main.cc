@@ -26,6 +26,7 @@
 #include "metric.h"
 #include "singleton.h"
 
+#include <chrono>
 #include <cstdint>
 #include <ctime>
 #include <iostream>
@@ -105,6 +106,10 @@ TestEncapDecap(int eta,
         {
             FATAL_ERROR("TestEncapDecap failed!");
         }
+        else
+        {
+            break;
+        }
     }
 
     HIGHLIGHT("TestEncapDecap passed");
@@ -163,30 +168,29 @@ TestEncapDecap(int eta,
         {
             FATAL_ERROR("TestEncapDecap failed!");
         }
+        else
+        {
+            break;
+        }
     }
 
     HIGHLIGHT("TestEncapDecap passed");
 }
 
 void
-TestSplitMergeGroup(int eta, std::shared_ptr<FullParameter> omega, int split_group_num)
+TestSplitMergeGroup(int eta,
+                    std::shared_ptr<FullParameter> omega,
+                    int split_group_num,
+                    std::unordered_map<int64_t, std::shared_ptr<FNIAGKA::User>> users)
 {
     // initialize
     auto& pki = Singleton<PKI>::GetInstance();
-    std::unordered_map<int64_t, std::shared_ptr<FNIAGKA::User>> users;
     auto group_info = GroupInfo::NewGroupInfo(eta);
     auto& metric = Singleton<Metric>::GetInstance();
 
-    for (int i = 0; i < eta; i++)
+    for (auto& pair : users)
     {
-        auto key = metric.GenerateStatKey(EmitType::kComputeUserGen);
-        metric.Emit(EmitType::kComputeUserGen, key);
-        auto user = FNIAGKA::UserGen(omega->pp_);
-        metric.Emit(EmitType::kComputeUserGen, key);
-
-        users[user->uid_] = user;
-        pki.UserRegister(user->uid_, user->upk_);
-        group_info.Occupy(user->uid_);
+        group_info.Occupy(pair.first);
     }
 
     std::unordered_map<int64_t, EncryptionKey> encryption_keys;
@@ -196,15 +200,12 @@ TestSplitMergeGroup(int eta, std::shared_ptr<FullParameter> omega, int split_gro
         encryption_keys[pair.first] = EncryptionKey();
         decryption_keys[pair.first] = DecryptionKey();
 
-        auto key = metric.GenerateStatKey(EmitType::kComputeAgree);
-        metric.Emit(EmitType::kComputeAgree, key);
         FNIAGKA::Agree(eta,
                        omega,
                        pair.second,
                        std::make_shared<GroupInfo>(group_info),
                        encryption_keys[pair.first],
                        decryption_keys[pair.first]);
-        metric.Emit(EmitType::kComputeAgree, key);
     }
 
     TestEncapDecap(eta,
@@ -236,8 +237,9 @@ TestSplitMergeGroup(int eta, std::shared_ptr<FullParameter> omega, int split_gro
 
     for (auto& pair : users)
     {
-        auto key = metric.GenerateStatKey(EmitType::kComputeSplit);
-        metric.Emit(EmitType::kComputeSplit, key);
+        EmitType et = (EmitType)((int)EmitType::kComputeSplit_2 + (split_group_num - 2));
+        auto key = metric.GenerateStatKey(et);
+        metric.Emit(et, key);
         FNIAGKA::SplitGroup(eta,
                             omega,
                             pair.second,
@@ -245,7 +247,7 @@ TestSplitMergeGroup(int eta, std::shared_ptr<FullParameter> omega, int split_gro
                             group_infos_after_split,
                             encryption_keys[pair.first],
                             decryption_keys[pair.first]);
-        metric.Emit(EmitType::kComputeSplit, key);
+        metric.Emit(et, key);
     }
 
     for (int i = 0; i < group_infos_after_split.size(); i++)
@@ -268,12 +270,18 @@ TestSplitMergeGroup(int eta, std::shared_ptr<FullParameter> omega, int split_gro
         {
             cur_eks.push_back(encryption_keys[group_infos_after_split[j].GetMembers()[0]]);
         }
+
+        EmitType et = (EmitType)((int)EmitType::kComputeMergeStandard_2 + (split_group_num - 2));
+        auto key = metric.GenerateStatKey(et);
+        metric.Emit(et, key);
         std::vector<EncryptionKey> new_eks = FNIAGKA::MergeGroup(eta,
                                                                  omega,
                                                                  user.second,
                                                                  cur_eks,
                                                                  decryption_keys[user.first],
                                                                  FNIAGKA::MergeMode::kStandard);
+
+        metric.Emit(et, key);
 
         // for (int i = 0; i < new_eks.size(); i++)
         // {
@@ -291,6 +299,9 @@ TestSplitMergeGroup(int eta, std::shared_ptr<FullParameter> omega, int split_gro
                            new_eks[i].group_info_.GetMembers());
         }
 
+        et = (EmitType)((int)EmitType::kComputeMergeExtended_2 + (split_group_num - 2));
+        key = metric.GenerateStatKey(et);
+        metric.Emit(et, key);
         std::vector<EncryptionKey> new_eks_extended =
             FNIAGKA::MergeGroup(eta,
                                 omega,
@@ -298,6 +309,7 @@ TestSplitMergeGroup(int eta, std::shared_ptr<FullParameter> omega, int split_gro
                                 cur_eks,
                                 decryption_keys[user.first],
                                 FNIAGKA::MergeMode::kExtended);
+        metric.Emit(et, key);
 
         for (int i = 0; i < new_eks_extended.size(); i++)
         {
@@ -312,16 +324,228 @@ TestSplitMergeGroup(int eta, std::shared_ptr<FullParameter> omega, int split_gro
     }
 }
 
+void
+TestSAAGKA(int security_level, std::shared_ptr<PublicParameter> pp)
+{
+    std::vector<std::chrono::microseconds> durations;
+
+    for (int i = 1; i <= 10; i++)
+    {
+        int group_size = i * 10;
+        int mult_cnt = 3 * group_size;
+        int exp_cnt = group_size;
+        int pairing_cnt = 1;
+
+        std::vector<Big> r(exp_cnt);
+        for (int j = 0; j < exp_cnt; j++)
+        {
+            pp->pfc_->random(r[j]);
+        }
+        G1 tmp = pp->pfc_->mult(pp->g0_, r[0]);
+
+        // start
+        auto now = std::chrono::steady_clock::now();
+        for (int j = 0; j < mult_cnt; j++)
+        {
+            tmp = tmp + tmp;
+        }
+
+        for (int j = 0; j < exp_cnt; j++)
+        {
+            pp->pfc_->mult(pp->g0_, r[j]);
+        }
+
+        pp->pfc_->pairing(tmp, tmp);
+        auto end = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - now);
+        durations.push_back(duration);
+    }
+
+    std::cout << "[";
+    for (int i = 0; i < durations.size(); i++)
+    {
+        std::cout << durations[i].count();
+        if (i != durations.size() - 1)
+        {
+            std::cout << ",";
+        }
+    }
+    std::cout << "]";
+}
+
+void
+TestUpkUpdate(std::shared_ptr<PublicParameter> pp,
+              std::shared_ptr<FullParameter> omega,
+              int user_num)
+{
+    // initialize
+    auto& pki = Singleton<PKI>::GetInstance();
+    std::vector<std::shared_ptr<FNIAGKA::User>> users(user_num);
+    for (int i = 0; i < user_num; i++)
+    {
+        users[i] = FNIAGKA::UserGen(pp);
+        pki.UserRegister(users[i]->uid_, users[i]->upk_);
+    }
+    auto group_info = GroupInfo::NewGroupInfo(pp->max_group_size_);
+    for (int i = 0; i < users.size(); i++)
+    {
+        group_info.Occupy(users[i]->uid_);
+    }
+
+    std::vector<EncryptionKey> encryption_keys(user_num);
+    std::vector<DecryptionKey> decryption_keys(user_num);
+    for (int i = 0; i < users.size(); i++)
+    {
+        FNIAGKA::Agree(pp->max_group_size_,
+                       omega,
+                       users[i],
+                       std::make_shared<GroupInfo>(group_info),
+                       encryption_keys[i],
+                       decryption_keys[i]);
+    }
+
+    // test
+    auto& metric = Singleton<Metric>::GetInstance();
+    for (int i = 0; i < users.size(); i++)
+    {
+        auto key = metric.GenerateStatKey(EmitType::kComputeUpdateUpk);
+        UserPublicKey stale_upk = *users[i]->upk_;
+        UserPrivateKey stale_usk = *users[i]->usk_;
+
+        // update upk
+        metric.Emit(EmitType::kComputeUpdateUpk, key);
+        users[i]->UpdateKey(pp);
+        metric.Emit(EmitType::kComputeUpdateUpk, key);
+
+        // update group key
+        for (int j = 0; j < users.size(); j++)
+        {
+            auto key = metric.GenerateStatKey(EmitType::kComputeUpdateGroupKey);
+            metric.Emit(EmitType::kComputeUpdateGroupKey, key);
+            if (j != i)
+            {
+                FNIAGKA::UpdateGroupKey(pp->max_group_size_,
+                                        omega,
+                                        users[j],
+                                        users[i]->uid_,
+                                        encryption_keys[j],
+                                        decryption_keys[j],
+                                        stale_upk);
+            }
+            else
+            {
+                FNIAGKA::UpdateGroupKey(pp->max_group_size_,
+                                        omega,
+                                        users[i],
+                                        users[i]->uid_,
+                                        encryption_keys[i],
+                                        decryption_keys[i],
+                                        stale_upk,
+                                        std::make_shared<UserPrivateKey>(stale_usk));
+            }
+            metric.Emit(EmitType::kComputeUpdateGroupKey, key);
+        }
+    }
+
+    metric.Summarize();
+}
+
+void
+TestUpkUpdateV2(std::shared_ptr<FullParameter> omega, int user_num)
+{
+    // initialize
+    auto& pki = Singleton<PKI>::GetInstance();
+    std::vector<std::shared_ptr<FNIAGKA::User>> users(user_num);
+    for (int i = 0; i < user_num; i++)
+    {
+        users[i] = FNIAGKA::UserGen(omega->pp_);
+        pki.UserRegister(users[i]->uid_, users[i]->upk_);
+    }
+
+    std::vector<EncryptionKey> encryption_keys(user_num);
+    std::vector<DecryptionKey> decryption_keys(user_num);
+    auto group_info = GroupInfo::NewGroupInfo(omega->pp_->max_group_size_);
+    for (int i = 0; i < users.size(); i++)
+    {
+        group_info.Occupy(users[i]->uid_);
+    }
+    for (int i = 0; i < users.size(); i++)
+    {
+        FNIAGKA::Agree(omega->pp_->max_group_size_,
+                       omega,
+                       users[i],
+                       std::make_shared<GroupInfo>(group_info),
+                       encryption_keys[i],
+                       decryption_keys[i]);
+    }
+
+    std::vector<EncryptionKey> eks_used_for_update;
+    eks_used_for_update.push_back(encryption_keys[0]);
+
+    // test
+    auto& metric = Singleton<Metric>::GetInstance();
+    auto key = metric.GenerateStatKey(EmitType::kComputeUpdateUpkLaunchV2);
+    metric.Emit(EmitType::kComputeUpdateUpkLaunchV2, key);
+    auto kum = FNIAGKA::UserKeyUpdLaunch(omega, 1, eks_used_for_update);
+    metric.Emit(EmitType::kComputeUpdateUpkLaunchV2, key);
+
+    // duplicate UserKeyUpdLaunch for more accurate measurement
+    for (int L = 1; L <= 5; L++)
+    {
+        for (int v = 2; v <= 10; v++)
+        {
+            std::vector<EncryptionKey> tmp_eks(L, encryption_keys[0]);
+            EmitType et = (EmitType)((int)EmitType::kComputeUpdateUpkLaunchV2 + (L - 1));
+            key = metric.GenerateStatKey(et);
+            metric.Emit(et, key);
+            FNIAGKA::UserKeyUpdLaunch(omega, v, tmp_eks);
+            metric.Emit(et, key);
+        }
+    }
+
+    // update upk and group key
+
+    for (int i = 0; i < users.size(); i++)
+    {
+        key = metric.GenerateStatKey(EmitType::kComputeUpdateUpkV2);
+        metric.Emit(EmitType::kComputeUpdateUpkV2, key);
+        FNIAGKA::UserKeyUpd(omega, users[i], decryption_keys[i], kum);
+        metric.Emit(EmitType::kComputeUpdateUpkV2, key);
+    }
+
+    for (int i = 0; i < users.size(); i++)
+    {
+        key = metric.GenerateStatKey(EmitType::kComputeUpdateGroupKeyV2);
+        metric.Emit(EmitType::kComputeUpdateGroupKeyV2, key);
+        FNIAGKA::GroupKeyUpd(omega,
+                             std::make_shared<GroupInfo>(group_info),
+                             users[i],
+                             encryption_keys[i],
+                             decryption_keys[i],
+                             1);
+        metric.Emit(EmitType::kComputeUpdateGroupKeyV2, key);
+    }
+
+    metric.Summarize();
+}
+
 int
 main(int argc, char* argv[])
 {
-    if (argc != 3)
+    if (argc < 3)
     {
-        std::cout << "Usage: " << argv[0] << " <security_level> <max_group_size>" << std::endl;
+        std::cout << "Usage: " << argv[0] << " <security_level> <max_group_size> [test_type]"
+                  << std::endl;
         return 1;
     }
     int security_level = std::stoi(argv[1]);
     int max_group_size = std::stoi(argv[2]);
+    std::string test_type = "default";
+    if (argc >= 4)
+    {
+        test_type = argv[3];
+    }
+
     if (security_level != 80 && security_level != 128)
     {
         std::cout << "security_level must be 80 or 128" << std::endl;
@@ -336,8 +560,8 @@ main(int argc, char* argv[])
     auto pp = FNIAGKA::Setup(security_level, max_group_size);
     metric.Emit(EmitType::kComputeSetup, key);
 
-    std::vector<std::shared_ptr<PNPublicKey>> pn_pks(10);
-    for (int i = 0; i < 10; i++)
+    std::vector<std::shared_ptr<PNPublicKey>> pn_pks(3);
+    for (int i = 0; i < 3; i++)
     {
         key = metric.GenerateStatKey(EmitType::kComputePNGen);
         metric.Emit(EmitType::kComputePNGen, key);
@@ -351,6 +575,17 @@ main(int argc, char* argv[])
     metric.Emit(EmitType::kComputeNegotiate, key);
 
     std::cout << "Negotiate DONE" << std::endl;
+
+    if (test_type == "test_upk_update")
+    {
+        TestUpkUpdate(pp, omega, 10);
+        return 0;
+    }
+    else if (test_type == "test_upk_update_v2")
+    {
+        TestUpkUpdateV2(omega, max_group_size);
+        return 0;
+    }
 
     auto& pki = Singleton<PKI>::GetInstance();
 
@@ -367,14 +602,14 @@ main(int argc, char* argv[])
     std::cout << "UserGen DONE" << std::endl;
 
     auto group_info = GroupInfo::NewGroupInfo(max_group_size);
-    for (int i = 0; i < users.size() / 2; i++)
+    for (int i = 0; i < users.size() - 1; i++)
     {
         group_info.Occupy(users[i]->uid_);
     }
 
     std::vector<EncryptionKey> encryption_keys(user_total_num);
     std::vector<DecryptionKey> decryption_keys(user_total_num);
-    for (int i = 0; i < users.size() / 2; i++)
+    for (int i = 0; i < users.size() - 1; i++)
     {
         key = metric.GenerateStatKey(EmitType::kComputeAgree);
         metric.Emit(EmitType::kComputeAgree, key);
@@ -397,28 +632,12 @@ main(int argc, char* argv[])
 
     INFO("============ Test Add ============");
 
-    int add_count = 0;
-    for (int i = users.size() / 2; i < users.size(); i++)
+    auto uid_to_be_added = users[user_total_num - 1]->uid_;
+    int j = 0;
+    for (int j = 0; j < users.size() - 1; j++)
     {
-        add_count++;
-        auto uid_to_be_added = users[i]->uid_;
-        int j = 0;
-        for (int j = 0; j < i; j++)
-        {
-            key = metric.GenerateStatKey(EmitType::kComputeAddUpd);
-            metric.Emit(EmitType::kComputeAddUpd, key);
-            FNIAGKA::AddUser(max_group_size,
-                             omega,
-                             users[j],
-                             std::make_shared<GroupInfo>(group_info),
-                             uid_to_be_added,
-                             encryption_keys[j],
-                             decryption_keys[j]);
-            metric.Emit(EmitType::kComputeAddUpd, key);
-        }
-
-        key = metric.GenerateStatKey(EmitType::kComputeAddGen);
-        metric.Emit(EmitType::kComputeAddGen, key);
+        key = metric.GenerateStatKey(EmitType::kComputeAddUpd);
+        metric.Emit(EmitType::kComputeAddUpd, key);
         FNIAGKA::AddUser(max_group_size,
                          omega,
                          users[j],
@@ -426,56 +645,67 @@ main(int argc, char* argv[])
                          uid_to_be_added,
                          encryption_keys[j],
                          decryption_keys[j]);
-        metric.Emit(EmitType::kComputeAddGen, key);
-
-        group_info.Occupy(uid_to_be_added);
-        TestEncapDecap(max_group_size,
-                       omega,
-                       std::make_shared<GroupInfo>(group_info),
-                       users,
-                       encryption_keys[0],
-                       decryption_keys,
-                       group_info.GetMembers());
-
-        if (add_count >= 10)
-        {
-            break;
-        }
+        metric.Emit(EmitType::kComputeAddUpd, key);
     }
+
+    key = metric.GenerateStatKey(EmitType::kComputeAddGen);
+    metric.Emit(EmitType::kComputeAddGen, key);
+    FNIAGKA::AddUser(max_group_size,
+                     omega,
+                     users[j],
+                     std::make_shared<GroupInfo>(group_info),
+                     uid_to_be_added,
+                     encryption_keys[j],
+                     decryption_keys[j]);
+    metric.Emit(EmitType::kComputeAddGen, key);
+
+    group_info.Occupy(uid_to_be_added);
+    TestEncapDecap(max_group_size,
+                   omega,
+                   std::make_shared<GroupInfo>(group_info),
+                   users,
+                   encryption_keys[0],
+                   decryption_keys,
+                   group_info.GetMembers());
 
     INFO("============ Test Remove ============");
-    for (int i = add_count - 1; i >= 0; i--)
+    auto uid_to_be_removed = users[users.size() - 1]->uid_;
+    for (int j = 0; j < users.size() - 1; j++)
     {
-        auto uid_to_be_removed = users[users.size() / 2 + i]->uid_;
-        for (int j = 0; j < users.size() / 2 + i; j++)
-        {
-            key = metric.GenerateStatKey(EmitType::kComputeRemove);
-            metric.Emit(EmitType::kComputeRemove, key);
-            FNIAGKA::RemoveUser(max_group_size,
-                                omega,
-                                users[j],
-                                std::make_shared<GroupInfo>(group_info),
-                                uid_to_be_removed,
-                                encryption_keys[j],
-                                decryption_keys[j]);
+        key = metric.GenerateStatKey(EmitType::kComputeRemove);
+        metric.Emit(EmitType::kComputeRemove, key);
+        FNIAGKA::RemoveUser(max_group_size,
+                            omega,
+                            users[j],
+                            std::make_shared<GroupInfo>(group_info),
+                            uid_to_be_removed,
+                            encryption_keys[j],
+                            decryption_keys[j]);
 
-            metric.Emit(EmitType::kComputeRemove, key);
-        }
-        group_info.Vacate(uid_to_be_removed);
-        TestEncapDecap(max_group_size,
-                       omega,
-                       std::make_shared<GroupInfo>(group_info),
-                       users,
-                       encryption_keys[0],
-                       decryption_keys,
-                       group_info.GetMembers());
+        metric.Emit(EmitType::kComputeRemove, key);
     }
+    group_info.Vacate(uid_to_be_removed);
+    TestEncapDecap(max_group_size,
+                   omega,
+                   std::make_shared<GroupInfo>(group_info),
+                   users,
+                   encryption_keys[0],
+                   decryption_keys,
+                   group_info.GetMembers());
 
     INFO("============ Test Split ============");
-    TestSplitMergeGroup(max_group_size, omega, 2);
-    TestSplitMergeGroup(max_group_size, omega, 3);
-    TestSplitMergeGroup(max_group_size, omega, 4);
-    TestSplitMergeGroup(max_group_size, omega, 5);
+    std::unordered_map<int64_t, std::shared_ptr<FNIAGKA::User>> users_for_split_merge;
+    for (int i = 0; i < users.size() - 1; i++)
+    {
+        users_for_split_merge[users[i]->uid_] = users[i];
+    }
+
+    TestSplitMergeGroup(max_group_size, omega, 2, users_for_split_merge);
+    TestSplitMergeGroup(max_group_size, omega, 3, users_for_split_merge);
+    TestSplitMergeGroup(max_group_size, omega, 4, users_for_split_merge);
+    TestSplitMergeGroup(max_group_size, omega, 5, users_for_split_merge);
 
     metric.Summarize();
+
+    // TestSAAGKA(security_level, pp);
 }

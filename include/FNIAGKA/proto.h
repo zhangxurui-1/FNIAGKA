@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <map>
+#include <unordered_map>
 #include <utility>
 #define MR_PAIRING_SSP
 
@@ -56,6 +57,7 @@ struct UserPublicKey
 struct UserPrivateKey
 {
     std::vector<G1> ujj_;
+    std::vector<Big> nuj_;
 };
 
 struct GroupInfo
@@ -79,7 +81,12 @@ struct GroupInfo
                 os << ", ";
             }
         }
-        os << "] }";
+        os << "], uid_to_slot: { ";
+        for (auto& p : group_info.uid_to_slot_)
+        {
+            os << "[" << p.first << "," << p.second << "] ";
+        }
+        os << " } }";
         return os;
     }
 
@@ -209,6 +216,15 @@ struct KeyEncapsulation
 
 using GroupKey = GT;
 
+struct KeyUpdMaterial
+{
+    int version_;
+    int ct_num_;
+    std::vector<std::vector<uint8_t>> ct_r_;
+    std::vector<KeyEncapsulation> ct_key_;
+    std::vector<GroupInfo> group_infos_;
+};
+
 class FNIAGKA
 {
   public:
@@ -221,17 +237,41 @@ class FNIAGKA
     class User
     {
       public:
+        int version_;
         int64_t uid_;
         std::shared_ptr<UserPublicKey> upk_;
         std::shared_ptr<UserPrivateKey> usk_;
+        std::unordered_map<int, Big> upd_r_; // for key update v2, [version] --> [r]
+        // for key update v2, [version] --> [stale usk]
+        std::unordered_map<int, UserPrivateKey> stale_usks_;
 
         static int64_t id_counter_;
 
         User()
-            : uid_(id_counter_++),
+            : version_(0),
+              uid_(id_counter_++),
               upk_(std::make_shared<UserPublicKey>()),
               usk_(std::make_shared<UserPrivateKey>())
         {
+        }
+
+        // for key update v1
+        void UpdateKey(std::shared_ptr<PublicParameter> pp);
+
+        // for key update v2
+        inline void CacheR(int version, Big r)
+        {
+            upd_r_[version] = r;
+        }
+
+        inline std::pair<Big, bool> GetR(int version) const
+        {
+            auto it = upd_r_.find(version);
+            if (it == upd_r_.end())
+            {
+                return std::make_pair(Big(), false);
+            }
+            return std::make_pair(it->second, true);
         }
     };
 
@@ -295,8 +335,35 @@ class FNIAGKA
                                            const DecryptionKey& dk,
                                            const KeyEncapsulation& ct);
 
+    static void UpdateGroupKey(
+        int64_t eta,
+        std::shared_ptr<FullParameter> omega,
+        std::shared_ptr<User> user,
+        int64_t target_uid, // the user who updates its key
+        EncryptionKey& cur_ek,
+        DecryptionKey& cur_dk,
+        UserPublicKey& stale_upk, // the old public key of the target user before update
+        std::shared_ptr<UserPrivateKey> stale_usk =
+            nullptr // the old private key of the target user before update
+    );
+
     static bool IsValid(std::shared_ptr<PublicParameter> pp, std::shared_ptr<PNPublicKey> pn_pk);
-    static void SortGroupInfo(std::vector<GroupInfo>& group_infos);
+
+    static KeyUpdMaterial UserKeyUpdLaunch(std::shared_ptr<FullParameter> omega,
+                                           int version,
+                                           const std::vector<EncryptionKey>& eks);
+
+    static void UserKeyUpd(std::shared_ptr<FullParameter> omege,
+                           std::shared_ptr<User> user,
+                           const DecryptionKey& dk, // dk is for decrypting kum
+                           const KeyUpdMaterial& kum);
+
+    static void GroupKeyUpd(std::shared_ptr<FullParameter> omega,
+                            std::shared_ptr<GroupInfo> group_info,
+                            std::shared_ptr<User> user,
+                            EncryptionKey& ek,
+                            DecryptionKey& dk,
+                            int version);
 
   private:
     static std::vector<EncryptionKey> MergeGroupStandard(int64_t eta,

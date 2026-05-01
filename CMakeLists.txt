@@ -30,6 +30,8 @@ add_executable(main
     src/main.cc
     src/proto.cc
     src/metric.cc
+    src/bytereader.cc
+    src/bytewriter.cc
 )
 
 target_include_directories(main PRIVATE
