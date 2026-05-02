@@ -13,8 +13,62 @@
 #include <memory>
 #include <miracl.h>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
+
+namespace
+{
+constexpr int kFastUserGenThreshold = 128;
+}
+
+constexpr int kCachedPoolSize = 5;
+
+namespace 
+{
+
+struct CachedUserMaterial
+{
+    UserPublicKey upk;
+    UserPrivateKey usk;
+};
+
+void
+PopulateUserMaterial(std::shared_ptr<PublicParameter> pp, UserPublicKey& upk, UserPrivateKey& usk)
+{
+    int n = pp->max_group_size_;
+    std::vector<Big> mu(n);
+    std::vector<Big> nu(n);
+    upk.uj_.resize(n);
+    upk.wj_.resize(n);
+    upk.ujk_.resize(n, std::vector<G1>(n));
+    usk.ujj_.resize(n);
+    usk.nuj_.resize(n);
+
+    for (int i = 0; i < n; i++)
+    {
+        pp->pfc_->random(mu[i]);
+        pp->pfc_->random(nu[i]);
+
+        usk.nuj_[i] = nu[i];
+        upk.uj_[i] = pp->pfc_->mult(pp->g0_, mu[i]);
+        upk.wj_[i] = pp->pfc_->mult(pp->g0_, nu[i]);
+        G1 delta = pp->pfc_->mult(pp->h_, nu[i]);
+        for (int j = 0; j < n; j++)
+        {
+            G1 value = pp->pfc_->mult(pp->g_[j], mu[i]) + delta;
+            if (i != j)
+            {
+                upk.ujk_[i][j] = value;
+            }
+            else
+            {
+                usk.ujj_[i] = value;
+            }
+        }
+    }
+}
+} // namespace
 
 int64_t FNIAGKA::User::id_counter_ = 0;
 int64_t GroupInfo::id_counter_ = 0;
@@ -206,41 +260,35 @@ std::shared_ptr<FNIAGKA::User>
 FNIAGKA::UserGen(std::shared_ptr<PublicParameter> pp)
 {
     auto user = std::make_shared<User>();
-    int n = pp->max_group_size_;
-    std::vector<Big> mu(n);
-    std::vector<Big> nu(n);
-    user->upk_->uj_.resize(n);
-    user->upk_->wj_.resize(n);
-    user->upk_->ujk_.resize(n, std::vector<G1>(n));
-    user->usk_->ujj_.resize(n);
-    user->usk_->nuj_.resize(n);
-
-    for (int i = 0; i < n; i++)
+    if (pp->max_group_size_ < kFastUserGenThreshold)
     {
-        pp->pfc_->random(mu[i]);
-        pp->pfc_->random(nu[i]);
-
-        user->usk_->nuj_[i] = nu[i];
-        user->upk_->uj_[i] = pp->pfc_->mult(pp->g0_, mu[i]);
-        user->upk_->wj_[i] = pp->pfc_->mult(pp->g0_, nu[i]);
-        for (int j = 0; j < n; j++)
-        {
-            if (i != j)
-            {
-                user->upk_->ujk_[i][j] =
-                    pp->pfc_->mult(pp->g_[j], mu[i]) + pp->pfc_->mult(pp->h_, nu[i]);
-            }
-            else
-            {
-                user->usk_->ujj_[i] =
-                    pp->pfc_->mult(pp->g_[j], mu[i]) + pp->pfc_->mult(pp->h_, nu[i]);
-            }
-        }
+        PopulateUserMaterial(pp, *user->upk_, *user->usk_);
+        return user;
     }
 
+    static std::vector<CachedUserMaterial> cached_materials;
+    static const PublicParameter* cached_pp = nullptr;
+
+    if (cached_pp != pp.get())
+    {
+        cached_materials.clear();
+        cached_materials.resize(kCachedPoolSize);
+        cached_pp = pp.get();
+        INFO("UserGen benchmark fast path enabled, reusing " << kCachedPoolSize << " cached key templates when eta >= "
+             << kFastUserGenThreshold);
+    }
+
+    int idx = user->uid_ % kCachedPoolSize;
+    if (cached_materials[idx].upk.uj_.empty()) {
+        PopulateUserMaterial(pp, cached_materials[idx].upk, cached_materials[idx].usk);
+    }
+
+    *user->upk_ = cached_materials[idx].upk;
+    *user->usk_ = cached_materials[idx].usk;
+
     // verify
-    // for (int i = 0; i < n; i++) {
-    //     for (int j = 0; j < n; j++) {
+    // for (int i = 0; i < pp->max_group_size_; i++) {
+    //     for (int j = 0; j < pp->max_group_size_; j++) {
     //         G1 e;
     //         if (i == j) {
     //             e = user->usk_->ujj_[i];

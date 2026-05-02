@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 
-set -euo pipefail
+set -e
 
-ROOT=/Users/zxr/workspace/FNIAGKA
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN=${ROOT}/build/NIAGKA/main
 TOOLS_BIN=${ROOT}/tools
 TRIM_BIN=${TOOLS_BIN}/trim
 AGG_BIN=${TOOLS_BIN}/aggregate
-OUT_DIR=${ROOT}/log/log_test_upk_update
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+OUT_DIR="${ROOT}/log/log_test_upk_update_${TIMESTAMP}"
 
+mkdir -p "${OUT_DIR}"
 rm -f ${OUT_DIR}/exp_*.log
 
 for SECURITY_LEVEL in 80 128; do
@@ -25,4 +27,4 @@ for SECURITY_LEVEL in 80 128; do
 
 done
 
-$AGG_BIN
+"$AGG_BIN" "${OUT_DIR}"

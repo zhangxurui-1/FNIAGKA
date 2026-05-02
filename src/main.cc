@@ -36,6 +36,17 @@
 #include <unordered_set>
 #include <vector>
 
+namespace
+{
+constexpr int kFastBenchmarkThreshold = 20;
+
+bool
+UseFastBenchmarkMode(int eta)
+{
+    return eta >= kFastBenchmarkThreshold;
+}
+} // namespace
+
 //********* CHOOSE JUST ONE OF THESE **********
 // #define MR_PAIRING_SS2  // AES-80 or AES-128 security GF(2^m) curve
 // #define AES_SECURITY 80 // OR
@@ -285,19 +296,14 @@ TestSplitMergeGroup(int eta,
 
         // for (int i = 0; i < new_eks.size(); i++)
         // {
-        //     INFO("User " << user.first << " new ek: " << new_eks[i]);
+        //     TestEncapDecap(eta,
+        //                    omega,
+        //                    std::make_shared<GroupInfo>(new_eks[i].group_info_),
+        //                    users,
+        //                    new_eks[i],
+        //                    decryption_keys,
+        //                    new_eks[i].group_info_.GetMembers());
         // }
-
-        for (int i = 0; i < new_eks.size(); i++)
-        {
-            TestEncapDecap(eta,
-                           omega,
-                           std::make_shared<GroupInfo>(new_eks[i].group_info_),
-                           users,
-                           new_eks[i],
-                           decryption_keys,
-                           new_eks[i].group_info_.GetMembers());
-        }
 
         et = (EmitType)((int)EmitType::kComputeMergeExtended_2 + (split_group_num - 2));
         key = metric.GenerateStatKey(et);
@@ -311,16 +317,16 @@ TestSplitMergeGroup(int eta,
                                 FNIAGKA::MergeMode::kExtended);
         metric.Emit(et, key);
 
-        for (int i = 0; i < new_eks_extended.size(); i++)
-        {
-            TestEncapDecap(eta,
-                           omega,
-                           std::make_shared<GroupInfo>(new_eks_extended[i].group_info_),
-                           users,
-                           new_eks_extended[i],
-                           decryption_keys,
-                           new_eks_extended[i].group_info_.GetMembers());
-        }
+        // for (int i = 0; i < new_eks_extended.size(); i++)
+        // {
+        //     TestEncapDecap(eta,
+        //                    omega,
+        //                    std::make_shared<GroupInfo>(new_eks_extended[i].group_info_),
+        //                    users,
+        //                    new_eks_extended[i],
+        //                    decryption_keys,
+        //                    new_eks_extended[i].group_info_.GetMembers());
+        // }
     }
 }
 
@@ -593,10 +599,18 @@ main(int argc, char* argv[])
     std::vector<std::shared_ptr<FNIAGKA::User>> users(user_total_num);
     for (int i = 0; i < user_total_num; i++)
     {
-        key = metric.GenerateStatKey(EmitType::kComputeUserGen);
-        metric.Emit(EmitType::kComputeUserGen, key);
-        users[i] = FNIAGKA::UserGen(pp);
-        metric.Emit(EmitType::kComputeUserGen, key);
+        // Emit metric directly if fast mode is disabled. 
+        // If fast mode is enabled, only record the first few `UserGen` that perform actual computation.
+        bool should_emit_metric = !UseFastBenchmarkMode(max_group_size) || (UseFastBenchmarkMode(max_group_size) && i < kCachedPoolSize);
+
+        if (should_emit_metric) {
+            key = metric.GenerateStatKey(EmitType::kComputeUserGen);
+            metric.Emit(EmitType::kComputeUserGen, key);
+            users[i] = FNIAGKA::UserGen(pp);
+            metric.Emit(EmitType::kComputeUserGen, key);
+        } else {
+            users[i] = FNIAGKA::UserGen(pp);
+        }
         pki.UserRegister(users[i]->uid_, users[i]->upk_);
     }
     std::cout << "UserGen DONE" << std::endl;

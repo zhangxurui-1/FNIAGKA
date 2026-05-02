@@ -1,13 +1,46 @@
 #include <algorithm>
-#include <filesystem>
+#include <chrono>
+#include <ctime>
+#include <dirent.h>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <map>
 #include <sstream>
 #include <string>
+#include <sys/stat.h>
 #include <vector>
 
-namespace fs = std::filesystem;
+namespace
+{
+bool
+IsRegularFile(const std::string& path)
+{
+    struct stat st;
+    return stat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode);
+}
+
+std::string
+JoinPath(const std::string& dir, const std::string& file)
+{
+    if (dir.empty() || dir.back() == '/')
+    {
+        return dir + file;
+    }
+    return dir + "/" + file;
+}
+
+std::string
+BaseName(const std::string& path)
+{
+    auto pos = path.find_last_of('/');
+    if (pos == std::string::npos)
+    {
+        return path;
+    }
+    return path.substr(pos + 1);
+}
+} // namespace
 
 std::string
 NowToString()
@@ -26,30 +59,37 @@ NowToString()
 int
 main(int argc, char* argv[])
 {
-    fs::path dir = "/Users/zxr/workspace/FNIAGKA/log/log_test_upk_update_v2";
-
-    fs::path out_file = dir / ("exp_data_summary_" + NowToString() + ".log");
-
-    std::map<std::string, std::vector<double>> avg_datas;
-    std::vector<fs::path> files;
-
-    for (const auto& entry : fs::directory_iterator(dir))
+    std::string dir = ".";
+    if (argc > 1)
     {
-        if (!entry.is_regular_file())
-        {
-            continue;
-        }
-
-        std::string filename = entry.path().filename().string();
-
-        if (filename.rfind("exp_security", 0) == 0)
-        {
-            files.push_back(entry.path());
-        }
+        dir = argv[1];
     }
 
-    auto extract_security = [](const fs::path& p) {
-        auto s = p.filename().string();
+    std::string out_file = JoinPath(dir, "exp_data_summary_" + NowToString() + ".log");
+
+    std::map<std::string, std::vector<double>> avg_datas;
+    std::vector<std::string> files;
+
+    DIR* dp = opendir(dir.c_str());
+    if (!dp)
+    {
+        std::cerr << "Failed to open directory: " << dir << std::endl;
+        return 1;
+    }
+
+    while (dirent* entry = readdir(dp))
+    {
+        std::string filename = entry->d_name;
+        std::string full_path = JoinPath(dir, filename);
+        if (filename.rfind("exp_security", 0) == 0 && IsRegularFile(full_path))
+        {
+            files.push_back(full_path);
+        }
+    }
+    closedir(dp);
+
+    auto extract_security = [](const std::string& path) {
+        auto s = BaseName(path);
         auto pos = s.find("security");
         int l = 0;
         while (pos + 8 + l < s.size() && s[pos + 8 + l] >= '0' && s[pos + 8 + l] <= '9')
@@ -59,8 +99,8 @@ main(int argc, char* argv[])
         return std::stoi(s.substr(pos + 8, l));
     };
 
-    auto extract_size = [](const fs::path& p) {
-        auto s = p.filename().string();
+    auto extract_size = [](const std::string& path) {
+        auto s = BaseName(path);
         auto pos = s.find("size");
         int l = 0;
         while (pos + 4 + l < s.size() && s[pos + 4 + l] >= '0' && s[pos + 4 + l] <= '9')
@@ -70,7 +110,7 @@ main(int argc, char* argv[])
         return std::stoi(s.substr(pos + 4, l));
     };
 
-    std::sort(files.begin(), files.end(), [&](const fs::path& a, const fs::path& b) {
+    std::sort(files.begin(), files.end(), [&](const std::string& a, const std::string& b) {
         int sa = extract_security(a);
         int sb = extract_security(b);
         if (sa != sb)

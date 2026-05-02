@@ -57,6 +57,10 @@ Metric::Summarize()
     {
         auto& st = stats_real_[i];
         std::cout << "\t" << EmitType(i) << ":" << st.size() << " events" << std::endl;
+        if (st.empty())
+        {
+            continue;
+        }
         Microseconds total(0);
         for (auto& p : st)
         {

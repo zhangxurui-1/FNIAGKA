@@ -12,6 +12,8 @@
 #include <memory>
 #include <vector>
 
+extern const int kCachedPoolSize;
+
 struct PublicParameter
 {
     std::shared_ptr<PFC> pfc_;

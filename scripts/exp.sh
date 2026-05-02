@@ -2,17 +2,19 @@
 
 set -euo pipefail
 
-ROOT=/Users/zxr/workspace/FNIAGKA
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN=${ROOT}/build/NIAGKA/main
 TOOLS_BIN=${ROOT}/tools
 TRIM_BIN=${TOOLS_BIN}/trim
 AGG_BIN=${TOOLS_BIN}/aggregate
-OUT_DIR=${ROOT}/log/log3
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+OUT_DIR="${ROOT}/log/log_${TIMESTAMP}"
 
+mkdir -p "${OUT_DIR}"
 rm -f ${OUT_DIR}/exp_*.log
 
 for SECURITY_LEVEL in 80 128; do
-    for ((i=1; i<=5; i++)); do
+    for ((i=1; i<=3; i++)); do
         MAX_GROUP_SIZE=$((10 * i))
         OUT_FILE=${OUT_DIR}/exp_security${SECURITY_LEVEL}_size${MAX_GROUP_SIZE}.log
 
@@ -25,4 +27,4 @@ for SECURITY_LEVEL in 80 128; do
 
 done
 
-$AGG_BIN
+"$AGG_BIN" "${OUT_DIR}"
