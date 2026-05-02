@@ -42,6 +42,6 @@ target_include_directories(main PRIVATE
 )
 
 target_link_libraries(main PRIVATE
-    MIRACL-core
     MIRACL-cpp
+    MIRACL-core
 )
