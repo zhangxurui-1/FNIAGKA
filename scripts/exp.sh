@@ -7,16 +7,26 @@ BIN=${ROOT}/build/NIAGKA/main
 TOOLS_BIN=${ROOT}/tools
 TRIM_BIN=${TOOLS_BIN}/trim
 AGG_BIN=${TOOLS_BIN}/aggregate
-TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-OUT_DIR="${ROOT}/log/log_${TIMESTAMP}"
+if [ "$#" -ge 1 ]; then
+    OUT_DIR="$(cd "$1" && pwd)"
+    echo "Using provided directory: ${OUT_DIR}"
+else
+    TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+    OUT_DIR="${ROOT}/log/log_${TIMESTAMP}"
+    echo "No directory provided, creating new directory: ${OUT_DIR}"
+fi
 
 mkdir -p "${OUT_DIR}"
-rm -f ${OUT_DIR}/exp_*.log
 
 for SECURITY_LEVEL in 80 128; do
-    for ((i=1; i<=3; i++)); do
+    for ((i=1; i<=40; i++)); do
         MAX_GROUP_SIZE=$((10 * i))
         OUT_FILE=${OUT_DIR}/exp_security${SECURITY_LEVEL}_size${MAX_GROUP_SIZE}.log
+
+        if [ -s "${OUT_FILE}" ]; then
+            echo "Skipping Experiment ${i}, maxGroupSize=${MAX_GROUP_SIZE}, securityLevel=${SECURITY_LEVEL} (File exists and is not empty)"
+            continue
+        fi
 
         echo "Running Experiment ${i}, maxGroupSize=${MAX_GROUP_SIZE}, securityLevel=${SECURITY_LEVEL}"
 

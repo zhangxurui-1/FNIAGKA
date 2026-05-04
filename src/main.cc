@@ -36,16 +36,16 @@
 #include <unordered_set>
 #include <vector>
 
-namespace
-{
-constexpr int kFastBenchmarkThreshold = 20;
+
+extern int kFastBenchmarkThreshold;
+constexpr int kMergeSplitEventThreshold = 10;
+constexpr int kPNNum = 1;
 
 bool
 UseFastBenchmarkMode(int eta)
 {
     return eta >= kFastBenchmarkThreshold;
 }
-} // namespace
 
 //********* CHOOSE JUST ONE OF THESE **********
 // #define MR_PAIRING_SS2  // AES-80 or AES-128 security GF(2^m) curve
@@ -192,7 +192,9 @@ void
 TestSplitMergeGroup(int eta,
                     std::shared_ptr<FullParameter> omega,
                     int split_group_num,
-                    std::unordered_map<int64_t, std::shared_ptr<FNIAGKA::User>> users)
+                    std::unordered_map<int64_t, std::shared_ptr<FNIAGKA::User>> users,
+                    std::unordered_map<int64_t, EncryptionKey>& encryption_keys,
+                    std::unordered_map<int64_t, DecryptionKey>& decryption_keys)
 {
     // initialize
     auto& pki = Singleton<PKI>::GetInstance();
@@ -202,21 +204,6 @@ TestSplitMergeGroup(int eta,
     for (auto& pair : users)
     {
         group_info.Occupy(pair.first);
-    }
-
-    std::unordered_map<int64_t, EncryptionKey> encryption_keys;
-    std::unordered_map<int64_t, DecryptionKey> decryption_keys;
-    for (auto& pair : users)
-    {
-        encryption_keys[pair.first] = EncryptionKey();
-        decryption_keys[pair.first] = DecryptionKey();
-
-        FNIAGKA::Agree(eta,
-                       omega,
-                       pair.second,
-                       std::make_shared<GroupInfo>(group_info),
-                       encryption_keys[pair.first],
-                       decryption_keys[pair.first]);
     }
 
     TestEncapDecap(eta,
@@ -249,16 +236,19 @@ TestSplitMergeGroup(int eta,
     for (auto& pair : users)
     {
         EmitType et = (EmitType)((int)EmitType::kComputeSplit_2 + (split_group_num - 2));
-        auto key = metric.GenerateStatKey(et);
-        metric.Emit(et, key);
-        FNIAGKA::SplitGroup(eta,
-                            omega,
-                            pair.second,
-                            std::make_shared<GroupInfo>(group_info),
-                            group_infos_after_split,
-                            encryption_keys[pair.first],
-                            decryption_keys[pair.first]);
-        metric.Emit(et, key);
+        if (metric.GetEventCount(et) < kMergeSplitEventThreshold)
+        {
+            auto key = metric.GenerateStatKey(et);
+            metric.Emit(et, key);
+            FNIAGKA::SplitGroup(eta,
+                                omega,
+                                pair.second,
+                                std::make_shared<GroupInfo>(group_info),
+                                group_infos_after_split,
+                                encryption_keys[pair.first],
+                                decryption_keys[pair.first]);
+            metric.Emit(et, key);
+        }
     }
 
     for (int i = 0; i < group_infos_after_split.size(); i++)
@@ -283,39 +273,33 @@ TestSplitMergeGroup(int eta,
         }
 
         EmitType et = (EmitType)((int)EmitType::kComputeMergeStandard_2 + (split_group_num - 2));
-        auto key = metric.GenerateStatKey(et);
-        metric.Emit(et, key);
-        std::vector<EncryptionKey> new_eks = FNIAGKA::MergeGroup(eta,
-                                                                 omega,
-                                                                 user.second,
-                                                                 cur_eks,
-                                                                 decryption_keys[user.first],
-                                                                 FNIAGKA::MergeMode::kStandard);
-
-        metric.Emit(et, key);
-
-        // for (int i = 0; i < new_eks.size(); i++)
-        // {
-        //     TestEncapDecap(eta,
-        //                    omega,
-        //                    std::make_shared<GroupInfo>(new_eks[i].group_info_),
-        //                    users,
-        //                    new_eks[i],
-        //                    decryption_keys,
-        //                    new_eks[i].group_info_.GetMembers());
-        // }
+        if (metric.GetEventCount(et) < kMergeSplitEventThreshold)
+        {
+            auto key = metric.GenerateStatKey(et);
+            metric.Emit(et, key);
+            std::vector<EncryptionKey> new_eks = FNIAGKA::MergeGroup(eta,
+                                                                    omega,
+                                                                    user.second,
+                                                                    cur_eks,
+                                                                    decryption_keys[user.first],
+                                                                    FNIAGKA::MergeMode::kStandard);
+            metric.Emit(et, key);
+        }
 
         et = (EmitType)((int)EmitType::kComputeMergeExtended_2 + (split_group_num - 2));
-        key = metric.GenerateStatKey(et);
-        metric.Emit(et, key);
-        std::vector<EncryptionKey> new_eks_extended =
-            FNIAGKA::MergeGroup(eta,
-                                omega,
-                                user.second,
-                                cur_eks,
-                                decryption_keys[user.first],
-                                FNIAGKA::MergeMode::kExtended);
-        metric.Emit(et, key);
+        if (metric.GetEventCount(et) < kMergeSplitEventThreshold)
+        {
+            auto key = metric.GenerateStatKey(et);
+            metric.Emit(et, key);
+            std::vector<EncryptionKey> new_eks_extended =
+                FNIAGKA::MergeGroup(eta,
+                                    omega,
+                                    user.second,
+                                    cur_eks,
+                                    decryption_keys[user.first],
+                                    FNIAGKA::MergeMode::kExtended);
+            metric.Emit(et, key);
+        }
 
         // for (int i = 0; i < new_eks_extended.size(); i++)
         // {
@@ -566,8 +550,8 @@ main(int argc, char* argv[])
     auto pp = FNIAGKA::Setup(security_level, max_group_size);
     metric.Emit(EmitType::kComputeSetup, key);
 
-    std::vector<std::shared_ptr<PNPublicKey>> pn_pks(3);
-    for (int i = 0; i < 3; i++)
+    std::vector<std::shared_ptr<PNPublicKey>> pn_pks(kPNNum);
+    for (int i = 0; i < kPNNum; i++)
     {
         key = metric.GenerateStatKey(EmitType::kComputePNGen);
         metric.Emit(EmitType::kComputePNGen, key);
@@ -709,15 +693,19 @@ main(int argc, char* argv[])
 
     INFO("============ Test Split ============");
     std::unordered_map<int64_t, std::shared_ptr<FNIAGKA::User>> users_for_split_merge;
+    std::unordered_map<int64_t, EncryptionKey> encryption_keys_for_split_merge;
+    std::unordered_map<int64_t, DecryptionKey> decryption_keys_for_split_merge;
     for (int i = 0; i < users.size() - 1; i++)
     {
         users_for_split_merge[users[i]->uid_] = users[i];
+        encryption_keys_for_split_merge[users[i]->uid_] = encryption_keys[i];
+        decryption_keys_for_split_merge[users[i]->uid_] = decryption_keys[i];
     }
 
-    TestSplitMergeGroup(max_group_size, omega, 2, users_for_split_merge);
-    TestSplitMergeGroup(max_group_size, omega, 3, users_for_split_merge);
-    TestSplitMergeGroup(max_group_size, omega, 4, users_for_split_merge);
-    TestSplitMergeGroup(max_group_size, omega, 5, users_for_split_merge);
+    TestSplitMergeGroup(max_group_size, omega, 2, users_for_split_merge, encryption_keys_for_split_merge, decryption_keys_for_split_merge);
+    TestSplitMergeGroup(max_group_size, omega, 3, users_for_split_merge, encryption_keys_for_split_merge, decryption_keys_for_split_merge);
+    TestSplitMergeGroup(max_group_size, omega, 4, users_for_split_merge, encryption_keys_for_split_merge, decryption_keys_for_split_merge);
+    TestSplitMergeGroup(max_group_size, omega, 5, users_for_split_merge, encryption_keys_for_split_merge, decryption_keys_for_split_merge);
 
     metric.Summarize();
 

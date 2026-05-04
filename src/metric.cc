@@ -79,3 +79,9 @@ Metric::GenerateStatKey(EmitType type)
     event_counter_[(size_t)type]++;
     return ss.str();
 }
+
+uint
+Metric::GetEventCount(EmitType type) const
+{
+    return event_counter_[(size_t)type];
+}

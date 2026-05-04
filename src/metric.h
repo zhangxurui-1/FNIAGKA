@@ -206,6 +206,8 @@ class Metric
     // Generate a new stat key
     std::string GenerateStatKey(EmitType type);
 
+    uint GetEventCount(EmitType type) const;
+
   private:
     std::vector<std::map<std::string, MetricValueReal>> pending_evs_real_;
     std::vector<std::map<std::string, Microseconds>> stats_real_;

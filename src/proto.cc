@@ -17,15 +17,9 @@
 #include <utility>
 #include <vector>
 
-namespace
-{
-constexpr int kFastUserGenThreshold = 128;
-}
 
-constexpr int kCachedPoolSize = 5;
-
-namespace 
-{
+constexpr int kCachedPoolSize = 1;
+int kFastBenchmarkThreshold = 100;
 
 struct CachedUserMaterial
 {
@@ -68,7 +62,6 @@ PopulateUserMaterial(std::shared_ptr<PublicParameter> pp, UserPublicKey& upk, Us
         }
     }
 }
-} // namespace
 
 int64_t FNIAGKA::User::id_counter_ = 0;
 int64_t GroupInfo::id_counter_ = 0;
@@ -260,7 +253,7 @@ std::shared_ptr<FNIAGKA::User>
 FNIAGKA::UserGen(std::shared_ptr<PublicParameter> pp)
 {
     auto user = std::make_shared<User>();
-    if (pp->max_group_size_ < kFastUserGenThreshold)
+    if (pp->max_group_size_ < kFastBenchmarkThreshold)
     {
         PopulateUserMaterial(pp, *user->upk_, *user->usk_);
         return user;
@@ -275,7 +268,7 @@ FNIAGKA::UserGen(std::shared_ptr<PublicParameter> pp)
         cached_materials.resize(kCachedPoolSize);
         cached_pp = pp.get();
         INFO("UserGen benchmark fast path enabled, reusing " << kCachedPoolSize << " cached key templates when eta >= "
-             << kFastUserGenThreshold);
+             << kFastBenchmarkThreshold);
     }
 
     int idx = user->uid_ % kCachedPoolSize;
