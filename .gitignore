@@ -31,3 +31,5 @@ config
 
 tools/**
 !tools/*.cc
+__pycache__/
+*.py[cod]

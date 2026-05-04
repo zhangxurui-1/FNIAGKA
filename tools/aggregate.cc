@@ -123,6 +123,7 @@ main(int argc, char* argv[])
     for (int i = 0; i < files.size(); i++)
     {
         auto& file = files[i];
+        int security_level = extract_security(file);
         std::string event_name;
         std::cout << "Processing file: " << file << std::endl;
         std::ifstream infs(file);
@@ -142,11 +143,12 @@ main(int argc, char* argv[])
             else if (subline.size() >= 3 && subline.substr(0, 3) == "Avg")
             {
                 double avg = std::stod(subline.substr(4, subline.find_first_of(' ') - 4));
-                if (avg_datas[event_name].size() >= files.size() / 2)
+                std::string key = event_name;
+                if (security_level == 128)
                 {
-                    event_name += " (128 bit)";
+                    key += " (128 bit)";
                 }
-                avg_datas[event_name].push_back(avg / 1000);
+                avg_datas[key].push_back(avg / 1000);
             }
         }
     }
