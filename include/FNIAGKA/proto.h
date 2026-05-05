@@ -4,9 +4,12 @@
 #include <map>
 #include <unordered_map>
 #include <utility>
-#define MR_PAIRING_SSP
 
-#include "pairing_1.h"
+// Use Type-3 (asymmetric) pairing on a BN curve.
+// MIRACL pairing API: GT = pairing(G2, G1)
+#define MR_PAIRING_BN
+
+#include "pairing_3.h"
 #include "utils.h"
 
 #include <memory>
@@ -17,10 +20,10 @@ extern const int kCachedPoolSize;
 struct PublicParameter
 {
     std::shared_ptr<PFC> pfc_;
-    G1 g0_; // generator of G1
+    G1 g0_; // base generator in G1 (right input of pairing)
     int max_group_size_;
-    G1 h_;
-    std::vector<G1> g_;
+    G2 h_;              // generator in G2 (left input of pairing)
+    std::vector<G2> g_; // per-slot generators in G2
 
     PublicParameter(int security_level)
         : pfc_(std::make_shared<PFC>(security_level))
@@ -31,9 +34,9 @@ struct PublicParameter
 struct FullParameter
 {
     std::shared_ptr<PublicParameter> pp_;
-    std::vector<std::vector<G1>> ujk_;
+    std::vector<std::vector<G2>> ujk_;
     std::vector<G1> u_;
-    std::vector<G1> d_;
+    std::vector<G2> d_;
     G1 a;
     G1 b;
 };
@@ -41,7 +44,7 @@ struct FullParameter
 struct PNPublicKey
 {
     G1 p_;
-    std::vector<std::vector<G1>> pjk_;
+    std::vector<std::vector<G2>> pjk_;
     std::vector<G1> pj0_;
 };
 
@@ -53,12 +56,12 @@ struct UserPublicKey
 {
     std::vector<G1> uj_;
     std::vector<G1> wj_;
-    std::vector<std::vector<G1>> ujk_;
+    std::vector<std::vector<G2>> ujk_;
 };
 
 struct UserPrivateKey
 {
-    std::vector<G1> ujj_;
+    std::vector<G2> ujj_;
     std::vector<Big> nuj_;
 };
 
@@ -198,7 +201,7 @@ struct EncryptionKey
 
 struct DecryptionKey
 {
-    G1 dk_;
+    G2 dk_;
     GroupInfo group_info_;
     int64_t slot_;
 
@@ -283,7 +286,7 @@ class FNIAGKA
     static std::shared_ptr<PNPublicKey> PNGen(std::shared_ptr<PublicParameter> pp);
     static std::shared_ptr<FullParameter> Negotiate(
         std::shared_ptr<PublicParameter> pp,
-        std::vector<std::shared_ptr<PNPublicKey>> pn_public_keys);
+        const std::vector<std::shared_ptr<PNPublicKey>>& pn_public_keys);
     static std::shared_ptr<User> UserGen(std::shared_ptr<PublicParameter> pp);
     static void Agree(int64_t eta,
                       std::shared_ptr<FullParameter> omega,

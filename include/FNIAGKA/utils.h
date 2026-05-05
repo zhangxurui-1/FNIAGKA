@@ -1,7 +1,8 @@
 #pragma once
 
-#define MR_PAIRING_SSP
-#include "pairing_1.h"
+// Keep MIRACL pairing configuration consistent across the project.
+#define MR_PAIRING_BN
+#include "pairing_3.h"
 
 #include <sstream>
 #include <string>
@@ -9,21 +10,23 @@
 inline std::string
 ToString(const G1& elem)
 {
-    ZZn coordinate_a, coordinate_b, coordinate_c;
-    extract(const_cast<ECn&>(elem.g), coordinate_a, coordinate_b, coordinate_c);
-
     std::stringstream ss;
-    ss << "(" << coordinate_a << ", " << coordinate_b << ", " << coordinate_c << ")";
+    ss << elem.g;
+    return ss.str();
+}
+
+inline std::string
+ToString(const G2& elem)
+{
+    std::stringstream ss;
+    ss << elem.g;
     return ss.str();
 }
 
 inline std::string
 ToString(const GT& elem)
 {
-    ZZn x, y;
-    elem.g.get(x, y);
-
     std::stringstream ss;
-    ss << "(" << x << "," << y << ")";
+    ss << elem.g;
     return ss.str();
 }

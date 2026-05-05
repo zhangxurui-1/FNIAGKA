@@ -1,23 +1,8 @@
 /*
-   Boneh-Gentry-Waters
-   Collusion Resistant Broadcast Encryption With Short Ciphertexts and Private Keys
-   Implemented on Type-1 pairing
+   FNIAGKA benchmark / demo harness.
 
-   Compile with modules as specified below
-
-        For MR_PAIRING_SSP curves
-        cl /O2 /GX bgw.cpp ssp_pair.cpp ecn.cpp zzn2.cpp zzn.cpp big.cpp miracl.lib
-
-        For MR_PAIRING_SS2 curves
-    cl /O2 /GX bgw.cpp ss2_pair.cpp ec2.cpp gf2m4x.cpp gf2m.cpp big.cpp miracl.lib
-
-        or of course
-
-    g++ -O2 bgw.cpp ss2_pair.cpp ec2.cpp gf2m4x.cpp gf2m.cpp big.cpp miracl.a -o bgw
-
-   See http://eprint.iacr.org/2005/018.pdf
-   Section 3.1
-
+   NOTE: This project has been switched to MIRACL Type-3 (asymmetric) pairing
+   on BN curves. Pairing API becomes GT = e(G2, G1).
 */
 
 #include "FNIAGKA/pki.h"
@@ -46,18 +31,6 @@ UseFastBenchmarkMode(int eta)
 {
     return eta >= kFastBenchmarkThreshold;
 }
-
-//********* CHOOSE JUST ONE OF THESE **********
-// #define MR_PAIRING_SS2  // AES-80 or AES-128 security GF(2^m) curve
-// #define AES_SECURITY 80 // OR
-// #define AES_SECURITY 128
-
-#define MR_PAIRING_SSP  // AES-80 or AES-128 security GF(p) curve
-#define AES_SECURITY 80 // OR
-
-// #define AES_SECURITY 128
-//*********************************************
-
 void
 TestEncapDecap(int eta,
                std::shared_ptr<FullParameter> omega,
@@ -345,7 +318,8 @@ TestSAAGKA(int security_level, std::shared_ptr<PublicParameter> pp)
             pp->pfc_->mult(pp->g0_, r[j]);
         }
 
-        pp->pfc_->pairing(tmp, tmp);
+        // Type-3 pairing expects (G2, G1)
+        pp->pfc_->pairing(pp->h_, tmp);
         auto end = std::chrono::steady_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - now);
         durations.push_back(duration);
@@ -536,9 +510,9 @@ main(int argc, char* argv[])
         test_type = argv[3];
     }
 
-    if (security_level != 80 && security_level != 128)
+    if (security_level != 128 && security_level != 192)
     {
-        std::cout << "security_level must be 80 or 128" << std::endl;
+        std::cout << "security_level must be 128 or 192" << std::endl;
         return 1;
     }
 
@@ -564,6 +538,9 @@ main(int argc, char* argv[])
     auto omega = FNIAGKA::Negotiate(pp, pn_pks);
     metric.Emit(EmitType::kComputeNegotiate, key);
 
+    // `pn_pks` is only used for `Negotiate`. Release it early to reduce peak RSS.
+    decltype(pn_pks){}.swap(pn_pks);
+
     std::cout << "Negotiate DONE" << std::endl;
 
     if (test_type == "test_upk_update")
@@ -585,7 +562,7 @@ main(int argc, char* argv[])
     {
         // Emit metric directly if fast mode is disabled. 
         // If fast mode is enabled, only record the first few `UserGen` that perform actual computation.
-        bool should_emit_metric = !UseFastBenchmarkMode(max_group_size) || (UseFastBenchmarkMode(max_group_size) && i < kCachedPoolSize);
+        bool should_emit_metric =  i < kCachedPoolSize;
 
         if (should_emit_metric) {
             key = metric.GenerateStatKey(EmitType::kComputeUserGen);

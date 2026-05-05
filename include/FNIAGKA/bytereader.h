@@ -1,13 +1,8 @@
 #pragma once
 
-#define MR_PAIRING_SSP
-
-#include "pairing_1.h"
-
 #include <big.h>
 #include <cstddef>
 #include <cstdint>
-#include <zzn2.h>
 
 template <typename T>
 struct ByteReadTrait;
@@ -62,29 +57,6 @@ struct ByteReadTrait
         }
 
         return static_cast<T>(v);
-    }
-};
-
-template <>
-struct ByteReadTrait<GT>
-{
-    static GT read(ByteReader& r)
-    {
-        auto lx = r.read<uint16_t>();
-        auto ly = r.read<uint16_t>();
-
-        const uint8_t* px = r.readBytes(lx);
-        const uint8_t* py = r.readBytes(ly);
-
-        Big bx = from_binary(lx, const_cast<char*>(reinterpret_cast<const char*>(px)));
-        Big by = from_binary(ly, const_cast<char*>(reinterpret_cast<const char*>(py)));
-        ZZn x(bx);
-        ZZn y(by);
-        ZZn2 z(x, y);
-
-        GT gt;
-        gt.g = z;
-        return gt;
     }
 };
 

@@ -1,9 +1,5 @@
 #pragma once
-
-#define MR_PAIRING_SSP
-
 #include "big.h"
-#include "pairing_1.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -19,7 +15,6 @@ class ByteWriter
     }
 
     static const int PREFIX_Big = 2;
-    static const int PREFIX_GT = 4;
 
     // basic type
     template <typename T>
@@ -39,12 +34,6 @@ class ByteWriter
     // | length (2B) | payload |
     // -------------------------
     void write(const Big& b);
-
-    // NOTE: total_length = length_x + length_y + 4B
-    // -------------------------------------------
-    // | length_x (2B) | length_y (2B) | payload |
-    // -------------------------------------------
-    void write(const GT& gt);
 
     size_t position() const;
 

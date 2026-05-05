@@ -18,8 +18,8 @@ fi
 
 mkdir -p "${OUT_DIR}"
 
-for SECURITY_LEVEL in 80 128; do
-    for ((i=1; i<=40; i++)); do
+for SECURITY_LEVEL in 128 192; do
+    for ((i=1; i<=49; i++)); do
         MAX_GROUP_SIZE=$((10 * i))
         OUT_FILE=${OUT_DIR}/exp_security${SECURITY_LEVEL}_size${MAX_GROUP_SIZE}.log
 

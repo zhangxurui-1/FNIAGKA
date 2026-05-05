@@ -30,6 +30,7 @@ mrebrick.c
 mrzzn2.c
 mrzzn2b.c
 mrzzn3.c
+mrzzn4.c
 mrecn2.c
 mrfast.c
 mralloc.c
@@ -38,4 +39,3 @@ mrsha3.c
 mrec2m.c
 mrgf2m.c
 mrmuldv.c
-

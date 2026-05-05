@@ -4,7 +4,6 @@
 #include "FNIAGKA/bytewriter.h"
 #include "FNIAGKA/pki.h"
 #include "log.h"
-#include "pairing_1.h"
 #include "singleton.h"
 
 #include <algorithm>
@@ -19,12 +18,12 @@
 
 
 constexpr int kCachedPoolSize = 1;
-int kFastBenchmarkThreshold = 100;
+int kFastBenchmarkThreshold = 1;
 
 struct CachedUserMaterial
 {
-    UserPublicKey upk;
-    UserPrivateKey usk;
+    std::shared_ptr<UserPublicKey> upk;
+    std::shared_ptr<UserPrivateKey> usk;
 };
 
 void
@@ -35,7 +34,7 @@ PopulateUserMaterial(std::shared_ptr<PublicParameter> pp, UserPublicKey& upk, Us
     std::vector<Big> nu(n);
     upk.uj_.resize(n);
     upk.wj_.resize(n);
-    upk.ujk_.resize(n, std::vector<G1>(n));
+    upk.ujk_.resize(n, std::vector<G2>(n));
     usk.ujj_.resize(n);
     usk.nuj_.resize(n);
 
@@ -47,10 +46,10 @@ PopulateUserMaterial(std::shared_ptr<PublicParameter> pp, UserPublicKey& upk, Us
         usk.nuj_[i] = nu[i];
         upk.uj_[i] = pp->pfc_->mult(pp->g0_, mu[i]);
         upk.wj_[i] = pp->pfc_->mult(pp->g0_, nu[i]);
-        G1 delta = pp->pfc_->mult(pp->h_, nu[i]);
+        G2 delta = pp->pfc_->mult(pp->h_, nu[i]);
         for (int j = 0; j < n; j++)
         {
-            G1 value = pp->pfc_->mult(pp->g_[j], mu[i]) + delta;
+            G2 value = pp->pfc_->mult(pp->g_[j], mu[i]) + delta;
             if (i != j)
             {
                 upk.ujk_[i][j] = value;
@@ -69,13 +68,20 @@ int64_t GroupInfo::id_counter_ = 0;
 std::shared_ptr<PublicParameter>
 FNIAGKA::Setup(int security_level, int max_group_size)
 {
+    // BN curves in MIRACL support AES-128 / AES-192 security levels.
+    // Keep CLI compatibility: map legacy 80-bit option to 128-bit.
+    if (security_level == 80)
+    {
+        security_level = 128;
+    }
+
     auto pp = std::make_shared<PublicParameter>(security_level);
     auto pfc = pp->pfc_;
 
     pp->max_group_size_ = max_group_size;
     pfc->random(pp->g0_);
     pfc->random(pp->h_);
-    pp->g_ = std::vector<G1>(max_group_size);
+    pp->g_ = std::vector<G2>(max_group_size);
     for (int i = 0; i < max_group_size; i++)
     {
         pfc->random(pp->g_[i]);
@@ -101,7 +107,7 @@ FNIAGKA::PNGen(std::shared_ptr<PublicParameter> pp)
 
     pn_pk->p_ = pfc->mult(pp->g0_, nu);
     pn_pk->pjk_ =
-        std::vector<std::vector<G1>>(pp->max_group_size_, std::vector<G1>(pp->max_group_size_));
+        std::vector<std::vector<G2>>(pp->max_group_size_, std::vector<G2>(pp->max_group_size_));
     pn_pk->pj0_ = std::vector<G1>(pp->max_group_size_);
     for (int i = 0; i < pp->max_group_size_; i++)
     {
@@ -129,7 +135,7 @@ FNIAGKA::PNGen(std::shared_ptr<PublicParameter> pp)
 
 std::shared_ptr<FullParameter>
 FNIAGKA::Negotiate(std::shared_ptr<PublicParameter> pp,
-                   std::vector<std::shared_ptr<PNPublicKey>> pn_public_keys)
+                   const std::vector<std::shared_ptr<PNPublicKey>>& pn_public_keys)
 {
     // verify the validity of pn_public_keys
     // for (int i = 0; i < pn_public_keys.size(); i++)
@@ -146,7 +152,7 @@ FNIAGKA::Negotiate(std::shared_ptr<PublicParameter> pp,
     omega->pp_ = pp;
     omega->u_.resize(pp->max_group_size_);
     omega->ujk_ =
-        std::vector<std::vector<G1>>(pp->max_group_size_, std::vector<G1>(pp->max_group_size_));
+        std::vector<std::vector<G2>>(pp->max_group_size_, std::vector<G2>(pp->max_group_size_));
     omega->d_.resize(pp->max_group_size_);
 
     for (int k = 0; k < pn_public_keys.size(); k++)
@@ -232,7 +238,10 @@ FNIAGKA::IsValid(std::shared_ptr<PublicParameter> pp, std::shared_ptr<PNPublicKe
                 continue;
             }
 
-            GT lhs = pp->pfc_->pairing(pp->g0_, pn_pk->pjk_[i][j]);
+            // Type-3 pairing: GT = e(G2, G1)
+            // Validity equation (asymmetric adaptation):
+            //   e(pjk[i][j], g0) == e(g[j], pj0[i]) * (i==last ? e(h, p) : 1)
+            GT lhs = pp->pfc_->pairing(pn_pk->pjk_[i][j], pp->g0_);
             GT rhs = pp->pfc_->pairing(pp->g_[j], pn_pk->pj0_[i]);
             if (i == pp->max_group_size_ - 1)
             {
@@ -272,12 +281,17 @@ FNIAGKA::UserGen(std::shared_ptr<PublicParameter> pp)
     }
 
     int idx = user->uid_ % kCachedPoolSize;
-    if (cached_materials[idx].upk.uj_.empty()) {
-        PopulateUserMaterial(pp, cached_materials[idx].upk, cached_materials[idx].usk);
+    if (!cached_materials[idx].upk)
+    {
+        cached_materials[idx].upk = std::make_shared<UserPublicKey>();
+        cached_materials[idx].usk = std::make_shared<UserPrivateKey>();
+        PopulateUserMaterial(pp, *cached_materials[idx].upk, *cached_materials[idx].usk);
     }
 
-    *user->upk_ = cached_materials[idx].upk;
-    *user->usk_ = cached_materials[idx].usk;
+    // Share identical key materials across users (read-only by convention).
+    // Any mutation path must detach (copy-on-write) before modifying.
+    user->upk_ = cached_materials[idx].upk;
+    user->usk_ = cached_materials[idx].usk;
 
     // verify
     // for (int i = 0; i < pp->max_group_size_; i++) {
@@ -418,7 +432,7 @@ FNIAGKA::Encap(int64_t eta,
 
     Big r;
     omega->pp_->pfc_->random(r);
-    G1 tmp = omega->pp_->pfc_->mult(omega->pp_->h_, r);
+    G2 tmp = omega->pp_->pfc_->mult(omega->pp_->h_, r);
     GroupKey group_key = omega->pp_->pfc_->pairing(tmp, b);
     KeyEncapsulation ct;
     ct.c1_ = omega->pp_->pfc_->mult(omega->pp_->g0_, r);
@@ -461,7 +475,7 @@ FNIAGKA::Decap(int64_t eta,
         FATAL_ERROR("User " << user->uid_ << " is not a receiver");
     }
 
-    G1 d = dk.dk_;
+    G2 d = dk.dk_;
     auto& pki = Singleton<PKI>::GetInstance();
     for (auto& pair : no_receiver)
     {
@@ -471,8 +485,8 @@ FNIAGKA::Decap(int64_t eta,
         d = d + omega->ujk_[slot][dk.slot_];
     }
 
-    GT tmp1 = omega->pp_->pfc_->pairing(ct.c1_, d);
-    GT tmp2 = omega->pp_->pfc_->pairing(-ct.c2_, omega->pp_->g_[dk.slot_]);
+    GT tmp1 = omega->pp_->pfc_->pairing(d, ct.c1_);
+    GT tmp2 = omega->pp_->pfc_->pairing(omega->pp_->g_[dk.slot_], -ct.c2_);
     GroupKey group_key = tmp1 * tmp2;
     return std::make_pair(group_key, true);
 }
@@ -919,6 +933,17 @@ FNIAGKA::UpdateGroupKey(
 void
 FNIAGKA::User::UpdateKey(std::shared_ptr<PublicParameter> pp)
 {
+    // Copy-on-write: this method mutates key material.
+    // Detach from shared cached keys to preserve read-only sharing semantics.
+    if (upk_ && upk_.use_count() > 1)
+    {
+        upk_ = std::make_shared<UserPublicKey>(*upk_);
+    }
+    if (usk_ && usk_.use_count() > 1)
+    {
+        usk_ = std::make_shared<UserPrivateKey>(*usk_);
+    }
+
     std::vector<Big> r(pp->max_group_size_);
     auto pfc = pp->pfc_;
     for (int i = 0; i < pp->max_group_size_; i++)
@@ -989,16 +1014,24 @@ FNIAGKA::UserKeyUpdLaunch(std::shared_ptr<FullParameter> omega,
         GroupKey gk = pair.first;
         kum.ct_key_[it - eks.begin()] = pair.second;
 
-        std::vector<uint8_t> gk_bytes;
-        ByteWriter bw(gk_bytes);
-        bw.write(gk);
+        // Derive a fixed-size mask from group key (avoid GT serialization dependency)
+        Big mask = pp->pfc_->hash_to_aes_key(gk);
+        std::vector<uint8_t> mask_bytes;
+        ByteWriter bw_mask(mask_bytes);
+        bw_mask.write(mask);
 
         kum.ct_r_[it - eks.begin()] = r_bytes;
-        int p = ByteWriter::PREFIX_Big;
-        while (p < r_bytes.size())
+        size_t p = ByteWriter::PREFIX_Big;
+        size_t mask_payload_len =
+            (mask_bytes.size() > ByteWriter::PREFIX_Big) ? (mask_bytes.size() - ByteWriter::PREFIX_Big) : 0;
+        if (mask_payload_len == 0)
+        {
+            FATAL_ERROR("KeyUpdMaterial: derived mask is empty");
+        }
+        while (p < kum.ct_r_[it - eks.begin()].size())
         {
             kum.ct_r_[it - eks.begin()][p] ^=
-                gk_bytes[p + ByteWriter::PREFIX_GT - ByteWriter::PREFIX_Big];
+                mask_bytes[ByteWriter::PREFIX_Big + ((p - ByteWriter::PREFIX_Big) % mask_payload_len)];
             p++;
         }
     }
@@ -1012,6 +1045,17 @@ FNIAGKA::UserKeyUpd(std::shared_ptr<FullParameter> omege,
                     const DecryptionKey& dk,
                     const KeyUpdMaterial& kum)
 {
+    // Copy-on-write: this function updates user's key material.
+    // Detach first if the user is sharing cached key objects.
+    if (user->upk_ && user->upk_.use_count() > 1)
+    {
+        user->upk_ = std::make_shared<UserPublicKey>(*user->upk_);
+    }
+    if (user->usk_ && user->usk_.use_count() > 1)
+    {
+        user->usk_ = std::make_shared<UserPrivateKey>(*user->usk_);
+    }
+
     for (int i = 0; i < kum.ct_num_; i++)
     {
         auto& group_info = kum.group_infos_[i];
@@ -1050,13 +1094,23 @@ FNIAGKA::UserKeyUpd(std::shared_ptr<FullParameter> omege,
 
                 // 2. recover r
                 std::vector<uint8_t> r_bytes = kum.ct_r_[i];
-                std::vector<uint8_t> gk_bytes;
-                ByteWriter bw(gk_bytes);
-                bw.write(gk.first);
+
+                Big mask = omege->pp_->pfc_->hash_to_aes_key(gk.first);
+                std::vector<uint8_t> mask_bytes;
+                ByteWriter bw_mask(mask_bytes);
+                bw_mask.write(mask);
+
                 size_t p = ByteWriter::PREFIX_Big;
+                size_t mask_payload_len =
+                    (mask_bytes.size() > ByteWriter::PREFIX_Big) ? (mask_bytes.size() - ByteWriter::PREFIX_Big) : 0;
+                if (mask_payload_len == 0)
+                {
+                    FATAL_ERROR("UserKeyUpd: derived mask is empty");
+                }
                 while (p < r_bytes.size())
                 {
-                    r_bytes[p] ^= gk_bytes[p + ByteWriter::PREFIX_GT - ByteWriter::PREFIX_Big];
+                    r_bytes[p] ^=
+                        mask_bytes[ByteWriter::PREFIX_Big + ((p - ByteWriter::PREFIX_Big) % mask_payload_len)];
                     p++;
                 }
 
@@ -1117,7 +1171,7 @@ FNIAGKA::GroupKeyUpd(std::shared_ptr<FullParameter> omega,
     {
         FATAL_ERROR("GroupKeyUpd failed, stale usk not found");
     }
-    G1 delta_d = user->stale_usks_[version - 1].ujj_[dk.slot_];
+    G2 delta_d = user->stale_usks_[version - 1].ujj_[dk.slot_];
     auto& pki = Singleton<PKI>::GetInstance();
     for (auto it = group_info->uid_to_slot_.begin(); it != group_info->uid_to_slot_.end(); it++)
     {
