@@ -23,16 +23,26 @@ class PKI
 
     inline bool UserRegister(int64_t uid, std::shared_ptr<UserPublicKey> upk)
     {
+        if (!upk)
+        {
+            return false;
+        }
         if (user_public_keys_.find(uid) != user_public_keys_.end())
         {
             return false;
         }
-        user_public_keys_[uid] = std::make_shared<UserPublicKey>(*upk);
+        // Store by shared_ptr to avoid deep-copying large key material.
+        // Mutation paths must detach (copy-on-write) before modifying.
+        user_public_keys_[uid] = std::move(upk);
         return true;
     }
 
     inline bool UserKeyUpdate(int64_t uid, int version, std::shared_ptr<UserPublicKey> upk)
     {
+        if (!upk)
+        {
+            return false;
+        }
         if (version <= 0)
         {
             return UserRegister(uid, upk);
@@ -49,7 +59,9 @@ class PKI
         {
             return false;
         }
-        upks[uid] = std::make_shared<UserPublicKey>(*upk);
+        // Store by shared_ptr to avoid deep-copying large key material.
+        // The caller is responsible for ensuring copy-on-write before mutation.
+        upks[uid] = std::move(upk);
         return true;
     }
 
