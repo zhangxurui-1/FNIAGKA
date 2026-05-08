@@ -68,12 +68,21 @@ int64_t GroupInfo::id_counter_ = 0;
 std::shared_ptr<PublicParameter>
 FNIAGKA::Setup(int security_level, int max_group_size)
 {
+    // Security level selection is constrained by the underlying MIRACL pairing backend.
+#ifdef MR_PAIRING_BLS
+    // MIRACL's `MR_PAIRING_BLS` backend in this tree only supports AES-256.
+    if (security_level != 256)
+    {
+        FATAL_ERROR("MR_PAIRING_BLS requires security_level=256, got " << security_level);
+    }
+#else
     // BN curves in MIRACL support AES-128 / AES-192 security levels.
     // Keep CLI compatibility: map legacy 80-bit option to 128-bit.
     if (security_level == 80)
     {
         security_level = 128;
     }
+#endif
 
     auto pp = std::make_shared<PublicParameter>(security_level);
     auto pfc = pp->pfc_;

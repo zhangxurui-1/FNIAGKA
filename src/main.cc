@@ -510,11 +510,20 @@ main(int argc, char* argv[])
         test_type = argv[3];
     }
 
+#ifdef MR_PAIRING_BLS
+    // This MIRACL backend only supports 256.
+    if (security_level != 256)
+    {
+        std::cout << "security_level must be 256 (MR_PAIRING_BLS)" << std::endl;
+        return 1;
+    }
+#else
     if (security_level != 128 && security_level != 192)
     {
         std::cout << "security_level must be 128 or 192" << std::endl;
         return 1;
     }
+#endif
 
     auto& metric = Singleton<Metric>::GetInstance();
 
