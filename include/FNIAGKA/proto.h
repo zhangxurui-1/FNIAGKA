@@ -74,7 +74,33 @@ struct GroupInfo
     int member_num_;
     std::vector<int> membership_;
     std::map<int64_t, int> uid_to_slot_;
+    std::vector<int> free_slots_;
+    std::vector<int> free_slot_pos_;
     static int64_t id_counter_;
+
+    void AddFreeSlot(int slot)
+    {
+        if (free_slot_pos_[slot] != -1)
+        {
+            return;
+        }
+        free_slot_pos_[slot] = free_slots_.size();
+        free_slots_.push_back(slot);
+    }
+
+    void RemoveFreeSlot(int slot)
+    {
+        int pos = free_slot_pos_[slot];
+        if (pos == -1)
+        {
+            return;
+        }
+        int last_slot = free_slots_.back();
+        free_slots_[pos] = last_slot;
+        free_slot_pos_[last_slot] = pos;
+        free_slots_.pop_back();
+        free_slot_pos_[slot] = -1;
+    }
 
     friend std::ostream& operator<<(std::ostream& os, const GroupInfo& group_info)
     {
@@ -106,20 +132,24 @@ struct GroupInfo
         if (membership.empty())
         {
             group_info.membership_ = std::vector<int>(eta, -1);
-            group_info.member_num_ = 0;
         }
         else
         {
             group_info.membership_ = membership;
-            group_info.member_num_ = 0;
-            for (int i = 0; i < membership.size(); i++)
+        }
+
+        group_info.member_num_ = 0;
+        group_info.free_slots_.clear();
+        group_info.free_slot_pos_ = std::vector<int>(group_info.membership_.size(), -1);
+        for (int i = group_info.membership_.size() - 1; i >= 0; i--)
+        {
+            if (group_info.membership_[i] == -1)
             {
-                if (membership[i] != -1)
-                {
-                    group_info.member_num_++;
-                    group_info.uid_to_slot_[membership[i]] = i;
-                }
+                group_info.AddFreeSlot(i);
+                continue;
             }
+            group_info.member_num_++;
+            group_info.uid_to_slot_[group_info.membership_[i]] = i;
         }
 
         return group_info;
@@ -127,21 +157,16 @@ struct GroupInfo
 
     int Occupy(int64_t uid)
     {
-        if (uid_to_slot_.find(uid) != uid_to_slot_.end() || member_num_ == eta_)
+        if (uid_to_slot_.find(uid) != uid_to_slot_.end() || member_num_ == eta_ || free_slots_.empty())
         {
             return -1;
         }
-        for (int i = 0; i < membership_.size(); i++)
-        {
-            if (membership_[i] == -1)
-            {
-                membership_[i] = uid;
-                uid_to_slot_[uid] = i;
-                member_num_++;
-                return i;
-            }
-        }
-        return -1;
+        int slot = free_slots_.back();
+        RemoveFreeSlot(slot);
+        membership_[slot] = uid;
+        uid_to_slot_[uid] = slot;
+        member_num_++;
+        return slot;
     }
 
     void Vacate(int64_t uid)
@@ -155,6 +180,7 @@ struct GroupInfo
         membership_[slot] = -1;
         uid_to_slot_.erase(it);
         member_num_--;
+        AddFreeSlot(slot);
     }
 
     bool TryOccupyWithSlot(int64_t uid, int slot)
@@ -167,6 +193,7 @@ struct GroupInfo
         {
             return false;
         }
+        RemoveFreeSlot(slot);
         membership_[slot] = uid;
         uid_to_slot_[uid] = slot;
         member_num_++;

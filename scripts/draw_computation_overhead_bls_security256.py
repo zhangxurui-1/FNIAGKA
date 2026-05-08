@@ -7,6 +7,7 @@ import math
 import os
 
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FormatStrFormatter, MultipleLocator
 
 
 def setup_plot_style():
@@ -28,15 +29,17 @@ def draw_n(xs,
            x_labels,
            y_labels,
            line_labels_list,
+           y_tick_steps,
            max_cols=4,
            figsize=(5, 4),
            save_path=None,
            show_marker=False):
     n = len(xs)
-    if not (len(ys_list) == len(titles) == len(x_labels) == len(y_labels) == len(line_labels_list) == n):
+    if not (len(ys_list) == len(titles) == len(x_labels) == len(y_labels) == len(line_labels_list) == len(y_tick_steps) == n):
         raise ValueError(
             f"Length mismatch: len(xs)={n}, len(ys_list)={len(ys_list)}, len(titles)={len(titles)}, "
-            f"len(x_labels)={len(x_labels)}, len(y_labels)={len(y_labels)}, len(line_labels_list)={len(line_labels_list)}"
+            f"len(x_labels)={len(x_labels)}, len(y_labels)={len(y_labels)}, "
+            f"len(line_labels_list)={len(line_labels_list)}, len(y_tick_steps)={len(y_tick_steps)}"
         )
 
     cols = min(max_cols, n)
@@ -60,6 +63,17 @@ def draw_n(xs,
         ax.set_title(titles[i])
         ax.set_xlabel(x_labels[i])
         ax.set_ylabel(y_labels[i])
+        if y_tick_steps[i] is not None:
+            step = y_tick_steps[i]
+            values = [value for line in ys_list[i] for value in line]
+            lower = math.floor(min(values) / step) * step
+            upper = math.ceil(max(values) / step) * step
+            ax.set_ylim(lower - step, upper + step)
+            ax.yaxis.set_major_locator(MultipleLocator(step))
+            if step < 1:
+                ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+            else:
+                ax.yaxis.set_major_formatter(FormatStrFormatter('%.0f'))
         if any(label for label in labels):
             ax.legend(frameon=False)
         ax.grid(True, linestyle='--', alpha=0.5)
@@ -127,6 +141,7 @@ SUBPLOTS_CONFIG = {
         "labels": None,
         "xlabel": "n",
         "ylabel": "Execution Time (ms)",
+        "y_tick_step": 0.05,
     },
     "Split": {
         "title": "Time Cost of Split",
@@ -185,6 +200,7 @@ SUBPLOTS_CONFIG = {
         "labels": None,
         "xlabel": "n",
         "ylabel": "Execution Time (ms)",
+        "y_tick_step": 10,
     },
     "Decap": {
         "title": "Time Cost of Decap",
@@ -192,6 +208,7 @@ SUBPLOTS_CONFIG = {
         "labels": None,
         "xlabel": "n",
         "ylabel": "Execution Time (ms)",
+        "y_tick_step": 10,
     },
 }
 
@@ -281,6 +298,7 @@ def main():
     xlabels_all = []
     ylabels_all = []
     line_labels_all = []
+    y_tick_steps_all = []
 
     prepared_subplots = []
     for subplot_name in args.subplots:
@@ -305,6 +323,7 @@ def main():
         xlabels_all.append(cfg["xlabel"])
         ylabels_all.append(cfg["ylabel"])
         line_labels_all.append(labels_kept)
+        y_tick_steps_all.append(cfg.get("y_tick_step"))
 
     if not xs_all:
         raise RuntimeError("No valid subplots to draw. Please check --subplots and log content.")
@@ -316,6 +335,7 @@ def main():
         xlabels_all,
         ylabels_all,
         line_labels_all,
+        y_tick_steps_all,
         save_path=args.save,
         show_marker=args.marker,
     )

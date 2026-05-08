@@ -510,15 +510,10 @@ FNIAGKA::AddUser(int64_t eta,
                  DecryptionKey& dk)
 {
     GroupInfo new_group_info = *cur_group_info;
-    int new_user_slot = -1;
-    for (int i = 0; i < new_group_info.membership_.size(); i++)
+    int new_user_slot = new_group_info.Occupy(new_user_uid);
+    if (new_user_slot == -1)
     {
-        if (new_group_info.membership_[i] == -1)
-        {
-            new_user_slot = i;
-            new_group_info.membership_[i] = new_user_uid;
-            break;
-        }
+        FATAL_ERROR("failed to add user " << new_user_uid << " to group " << new_group_info.gid_);
     }
 
     if (user->uid_ == new_user_uid)
@@ -557,16 +552,13 @@ FNIAGKA::RemoveUser(int64_t eta,
                     DecryptionKey& dk)
 {
     GroupInfo new_group_info = *cur_group_info;
-    int removed_user_slot = -1;
-    for (int i = 0; i < new_group_info.membership_.size(); i++)
+    auto slot_it = new_group_info.uid_to_slot_.find(removed_user_uid);
+    if (slot_it == new_group_info.uid_to_slot_.end())
     {
-        if (new_group_info.membership_[i] == removed_user_uid)
-        {
-            removed_user_slot = i;
-            new_group_info.membership_[i] = -1;
-            break;
-        }
+        FATAL_ERROR("user " << removed_user_uid << " not found in group " << new_group_info.gid_);
     }
+    int removed_user_slot = slot_it->second;
+    new_group_info.Vacate(removed_user_uid);
 
     auto upk = Singleton<PKI>::GetInstance().GetUserPublicKey(removed_user_uid);
     if (!upk)
