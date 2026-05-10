@@ -198,12 +198,17 @@ TestSplitMergeGroup(int eta,
     int c = 0;
     for (int i = 0; i < group_info.membership_.size(); i++)
     {
-        if (group_info.membership_[i] == -1)
+        auto uid = group_info.membership_[i];
+        if (uid == -1)
         {
             continue;
         }
         int idx = c % split_group_num;
-        group_infos_after_split[idx].Occupy(group_info.membership_[i]);
+        if (!group_infos_after_split[idx].TryOccupyWithSlot(uid, i))
+        {
+            FATAL_ERROR("failed to construct split benchmark group for uid " << uid << " at slot "
+                                                                              << i << " in subgroup " << idx);
+        }
         ++c;
     }
 
@@ -225,25 +230,41 @@ TestSplitMergeGroup(int eta,
         }
     }
 
-    for (int i = 0; i < group_infos_after_split.size(); i++)
+    std::vector<const GroupInfo*> non_empty_group_infos;
+    non_empty_group_infos.reserve(group_infos_after_split.size());
+    for (const auto& split_group_info : group_infos_after_split)
     {
-        auto tmp_uid = group_infos_after_split[i].GetMembers()[0];
+        if (split_group_info.member_num_ == 0)
+        {
+            continue;
+        }
+        non_empty_group_infos.push_back(&split_group_info);
+
+        auto members = split_group_info.GetMembers();
+        auto tmp_uid = members[0];
         TestEncapDecap(eta,
                        omega,
-                       std::make_shared<GroupInfo>(group_infos_after_split[i]),
+                       std::make_shared<GroupInfo>(split_group_info),
                        users,
                        encryption_keys[tmp_uid],
                        decryption_keys,
-                       group_infos_after_split[i].GetMembers());
+                       members);
+    }
+
+    if (non_empty_group_infos.size() < 2)
+    {
+        return;
     }
 
     // merge
     for (auto& user : users)
     {
         std::vector<EncryptionKey> cur_eks;
-        for (int j = 0; j < split_group_num; j++)
+        cur_eks.reserve(non_empty_group_infos.size());
+        for (const auto* split_group_info : non_empty_group_infos)
         {
-            cur_eks.push_back(encryption_keys[group_infos_after_split[j].GetMembers()[0]]);
+            auto members = split_group_info->GetMembers();
+            cur_eks.push_back(encryption_keys[members[0]]);
         }
 
         EmitType et = (EmitType)((int)EmitType::kComputeMergeStandard_2 + (split_group_num - 2));
@@ -663,19 +684,19 @@ main(int argc, char* argv[])
 
     INFO("============ Test Add ============");
 
-    auto uid_to_be_added = users[user_total_num - 1]->uid_;
-    int j = 0;
-    for (int j = 0; j < users.size() - 1; j++)
+    int new_user_index = user_total_num - 1;
+    auto uid_to_be_added = users[new_user_index]->uid_;
+    for (int existing_user_index = 0; existing_user_index < new_user_index; existing_user_index++)
     {
         key = metric.GenerateStatKey(EmitType::kComputeAddUpd);
         metric.Emit(EmitType::kComputeAddUpd, key);
         FNIAGKA::AddUser(max_group_size,
                          omega,
-                         users[j],
+                         users[existing_user_index],
                          std::make_shared<GroupInfo>(group_info),
                          uid_to_be_added,
-                         encryption_keys[j],
-                         decryption_keys[j]);
+                         encryption_keys[existing_user_index],
+                         decryption_keys[existing_user_index]);
         metric.Emit(EmitType::kComputeAddUpd, key);
     }
 
@@ -683,11 +704,11 @@ main(int argc, char* argv[])
     metric.Emit(EmitType::kComputeAddGen, key);
     FNIAGKA::AddUser(max_group_size,
                      omega,
-                     users[j],
+                     users[new_user_index],
                      std::make_shared<GroupInfo>(group_info),
                      uid_to_be_added,
-                     encryption_keys[j],
-                     decryption_keys[j]);
+                     encryption_keys[new_user_index],
+                     decryption_keys[new_user_index]);
     metric.Emit(EmitType::kComputeAddGen, key);
 
     group_info.Occupy(uid_to_be_added);

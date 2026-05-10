@@ -17,7 +17,7 @@
 #include <vector>
 
 
-constexpr int kCachedPoolSize = 1;
+const int kCachedPoolSize = 1;
 int kFastBenchmarkThreshold = 1;
 
 struct CachedUserMaterial
@@ -77,10 +77,9 @@ FNIAGKA::Setup(int security_level, int max_group_size)
     }
 #else
     // BN curves in MIRACL support AES-128 / AES-192 security levels.
-    // Keep CLI compatibility: map legacy 80-bit option to 128-bit.
-    if (security_level == 80)
+    if (security_level != 128 && security_level != 192)
     {
-        security_level = 128;
+        FATAL_ERROR("MR_PAIRING_BN requires security_level=128 or 192, got " << security_level);
     }
 #endif
 
@@ -674,7 +673,9 @@ FNIAGKA::MergeGroupStandard(int64_t eta,
     auto& pki = Singleton<PKI>::GetInstance();
     while (j > 0)
     {
-        GroupInfo group_info_from = new_eks[j].group_info_;
+        GroupInfo& group_info_from = new_eks[j].group_info_;
+        INFO("[MergeGroupStandard] begin round j=" << j << ", new_eks[j].group_info=" << new_eks[j].group_info_
+                                                   << ", group_info_from=" << group_info_from);
         if (group_info_from.member_num_ == 0)
         {
             new_eks.erase(new_eks.begin() + j);
@@ -682,11 +683,23 @@ FNIAGKA::MergeGroupStandard(int64_t eta,
             continue;
         }
 
-        bool abort = false;
-        for (auto pair : group_info_from.uid_to_slot_)
+        std::vector<int64_t> uids;
+        uids.reserve(group_info_from.uid_to_slot_.size());
+        for (const auto& kv : group_info_from.uid_to_slot_)
         {
-            auto uid = pair.first;
-            auto slot = pair.second;
+            uids.push_back(kv.first);
+        }
+
+        bool abort = false;
+        for (auto uid : uids)
+        {
+            auto slot_it = group_info_from.uid_to_slot_.find(uid);
+            if (slot_it == group_info_from.uid_to_slot_.end())
+            {
+                continue;
+            }
+
+            auto slot = slot_it->second;
             bool migrate_success = false;
             for (int k = 0; k < j; k++)
             {
@@ -713,6 +726,10 @@ FNIAGKA::MergeGroupStandard(int64_t eta,
 
                     // step 2: update old ek
                     group_info_from.Vacate(uid);
+                    INFO("[MergeGroupStandard] migrated uid=" << uid << ", slot=" << slot << ", from j=" << j
+                                                             << " to k=" << k << ", updated group_info_from="
+                                                             << group_info_from << ", current new_eks[j].group_info="
+                                                             << new_eks[j].group_info_);
 
                     new_eks[j].a_ = new_eks[j].a_ + omega->u_[slot] + (-upk->uj_[slot]);
                     if (slot != omega->pp_->max_group_size_ - 1)
@@ -729,14 +746,29 @@ FNIAGKA::MergeGroupStandard(int64_t eta,
 
             if (!migrate_success)
             {
+                INFO("[MergeGroupStandard] abort on uid=" << uid << ", slot=" << slot << ", j=" << j
+                                                          << ", group_info_from=" << group_info_from);
                 abort = true;
                 break;
             }
         }
         if (abort)
         {
+            INFO("[MergeGroupStandard] abort round j=" << j << ", new_eks[j].group_info=" << new_eks[j].group_info_
+                                                       << ", group_info_from=" << group_info_from);
             break;
         }
+
+        if (group_info_from.member_num_ == 0)
+        {
+            new_eks.erase(new_eks.begin() + j);
+        }
+        j--;
+    }
+
+    for (int i = 0; i < new_eks.size(); i++)
+    {
+        INFO("[MergeGroupStandard] final new_eks[" << i << "].group_info=" << new_eks[i].group_info_);
     }
 
     // compute dk
@@ -802,6 +834,7 @@ FNIAGKA::MergeGroupExtended(int64_t eta,
         }
 
         GroupInfo& group_info_from = new_eks[j].group_info_;
+        GroupInfo& group_info_to = new_eks[i].group_info_;
 
         std::vector<int64_t> uids;
         uids.reserve(group_info_from.uid_to_slot_.size());
@@ -810,10 +843,17 @@ FNIAGKA::MergeGroupExtended(int64_t eta,
             uids.push_back(kv.first);
         }
 
+        bool moved = false;
         for (auto uid : uids)
         {
-            auto slot_from = group_info_from.uid_to_slot_.at(uid);
-            auto slot_to = new_eks[i].group_info_.Occupy(uid);
+            auto it = group_info_from.uid_to_slot_.find(uid);
+            if (it == group_info_from.uid_to_slot_.end())
+            {
+                continue;
+            }
+
+            auto slot_from = it->second;
+            auto slot_to = group_info_to.Occupy(uid);
             if (slot_to == -1)
             {
                 break;
@@ -824,6 +864,8 @@ FNIAGKA::MergeGroupExtended(int64_t eta,
             {
                 FATAL_ERROR("upk not found");
             }
+
+            moved = true;
 
             // step 1: update new ek
             new_eks[i].a_ = new_eks[i].a_ + upk->uj_[slot_to] + (-omega->u_[slot_to]);
@@ -848,6 +890,22 @@ FNIAGKA::MergeGroupExtended(int64_t eta,
             {
                 new_eks[j].b_ = new_eks[j].b_ + (-upk->wj_[slot_from]) + omega->b;
             }
+        }
+
+        if (group_info_from.member_num_ == 0)
+        {
+            new_eks.erase(new_eks.begin() + j);
+            j--;
+            continue;
+        }
+        if (group_info_to.member_num_ == eta)
+        {
+            i++;
+            continue;
+        }
+        if (!moved)
+        {
+            i++;
         }
     }
 

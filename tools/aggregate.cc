@@ -143,11 +143,7 @@ main(int argc, char* argv[])
             else if (subline.size() >= 3 && subline.substr(0, 3) == "Avg")
             {
                 double avg = std::stod(subline.substr(4, subline.find_first_of(' ') - 4));
-                std::string key = event_name;
-                if (security_level == 128)
-                {
-                    key += " (128 bit)";
-                }
+                std::string key = event_name + " (" + std::to_string(security_level) + " bit)";
                 avg_datas[key].push_back(avg / 1000);
             }
         }
@@ -157,9 +153,12 @@ main(int argc, char* argv[])
     for (const auto& [event_name, avgs] : avg_datas)
     {
         outfs << event_name << ":[";
-        for (const auto& avg : avgs)
-        {
-            outfs << avg << ", ";
+        for (auto it=avgs.begin();it!=avgs.end();it++){
+            if(it-avgs.begin()<avgs.size()-1){
+                outfs<<*it<<", ";
+            }else{
+                outfs<<*it;
+            }
         }
         outfs << "]" << std::endl;
     }

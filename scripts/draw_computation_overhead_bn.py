@@ -1,10 +1,11 @@
 # Usage:
 # cd ${ROOT}
-# python3 scripts/draw_computation_overhead_N300.py --log log/log_20260503_011503/exp_data_summary_20260504-164731.log --subplots Agree Add Remove Split "Merge(standard)" "Merge(extended)" Encap Decap --limit 30 --step 3 --marker --save figures/proto_computation_cost_N300.pdf
+# python3 scripts/draw_computation_overhead_bn.py --log log/log_20260504_231450/exp_data_summary_20260510-154401.log --subplots Agree Add Remove Split "Merge(standard)" "Merge(extended)" Encap Decap --limit 30 --step 3 --marker --save figures/proto_computation_cost_bn.pdf
 
+import argparse
 import math
 import os
-import argparse
+import re
 
 import matplotlib.pyplot as plt
 
@@ -66,13 +67,15 @@ def draw_n(xs,
 
     for i in range(n):
         ax = axes[i]
-        for y, label in zip(ys_list[i], line_labels_list[i]):
+        labels = line_labels_list[i] or [None] * len(ys_list[i])
+        for y, label in zip(ys_list[i], labels):
             ax.plot(xs[i], y, marker=marker_fmt, linewidth=2, label=label)
 
         ax.set_title(titles[i])
         ax.set_xlabel(x_labels[i])
         ax.set_ylabel(y_labels[i])
-        ax.legend(frameon=False)
+        if any(label for label in labels):
+            ax.legend(frameon=False)
         ax.grid(True, linestyle='--', alpha=0.5)
 
     for j in range(n, rows * cols):
@@ -89,145 +92,107 @@ def draw_n(xs,
 SUBPLOTS_CONFIG = {
     "Setup": {
         "title": "Time Cost of Setup",
-        "keys": ["kComputeSetup", "kComputeSetup (128 bit)"],
-        "labels": ["80-bit", "128-bit"],
+        "series": [
+            {"base_key": "kComputeSetup"},
+        ],
         "xlabel": "N",
         "ylabel": "Execution Time (ms)",
     },
     "PNGen": {
         "title": "Time Cost of PNGen",
-        "keys": ["kComputePNGen", "kComputePNGen (128 bit)"],
-        "labels": ["80-bit", "128-bit"],
+        "series": [
+            {"base_key": "kComputePNGen"},
+        ],
         "xlabel": "N",
         "ylabel": "Execution Time (ms)",
     },
     "Negotiate": {
         "title": "Time Cost of Negotiate",
-        "keys": ["kComputeNegotiate", "kComputeNegotiate (128 bit)"],
-        "labels": ["80-bit", "128-bit"],
+        "series": [
+            {"base_key": "kComputeNegotiate"},
+        ],
         "xlabel": "N",
         "ylabel": "Execution Time (ms)",
     },
     "UserGen": {
         "title": "Time Cost of UserGen",
-        "keys": ["kComputeUserGen", "kComputeUserGen (128 bit)"],
-        "labels": ["80-bit", "128-bit"],
+        "series": [
+            {"base_key": "kComputeUserGen"},
+        ],
         "xlabel": "N",
         "ylabel": "Execution Time (ms)",
     },
     "Agree": {
         "title": "Time Cost of Agreement",
-        "keys": ["kComputeAgree", "kComputeAgree (128 bit)"],
-        "labels": ["80-bit", "128-bit"],
+        "series": [
+            {"base_key": "kComputeAgree"},
+        ],
         "xlabel": "n",
         "ylabel": "Execution Time (ms)",
     },
     "Add": {
         "title": "Time Cost of Add",
-        # 复用 Agree(新用户) 与 AddUpd(老用户) 作为 add 的 4 条线
-        "keys": ["kComputeAgree", "kComputeAgree (128 bit)", "kComputeAddUpd", "kComputeAddUpd (128 bit)"],
-        "labels": [
-            "80-bit (for new user)",
-            "128-bit (for new user)",
-            "80-bit (for old user)",
-            "128-bit (for old user)",
+        "series": [
+            {"base_key": "kComputeAgree", "label_suffix": "(for new user)"},
+            {"base_key": "kComputeAddUpd", "label_suffix": "(for old user)"},
         ],
         "xlabel": "n",
         "ylabel": "Execution Time (ms)",
     },
     "Remove": {
         "title": "Time Cost of Remove",
-        "keys": ["kComputeRemove", "kComputeRemove (128 bit)"],
-        "labels": ["80-bit", "128-bit"],
+        "series": [
+            {"base_key": "kComputeRemove"},
+        ],
         "xlabel": "n",
         "ylabel": "Execution Time (ms)",
     },
     "Split": {
         "title": "Time Cost of Split",
-        "keys": [
-            "kComputeSplit_2",
-            "kComputeSplit_2 (128 bit)",
-            "kComputeSplit_3",
-            "kComputeSplit_3 (128 bit)",
-            "kComputeSplit_4",
-            "kComputeSplit_4 (128 bit)",
-            "kComputeSplit_5",
-            "kComputeSplit_5 (128 bit)",
-        ],
-        "labels": [
-            "80-bit (L=2)",
-            "128-bit (L=2)",
-            "80-bit (L=3)",
-            "128-bit (L=3)",
-            "80-bit (L=4)",
-            "128-bit (L=4)",
-            "80-bit (L=5)",
-            "128-bit (L=5)",
+        "series": [
+            {"base_key": "kComputeSplit_2", "label_suffix": "(L=2)"},
+            {"base_key": "kComputeSplit_3", "label_suffix": "(L=3)"},
+            {"base_key": "kComputeSplit_4", "label_suffix": "(L=4)"},
+            {"base_key": "kComputeSplit_5", "label_suffix": "(L=5)"},
         ],
         "xlabel": "n",
         "ylabel": "Execution Time (ms)",
     },
     "Merge(standard)": {
         "title": "Time Cost of Merge (standard mode)",
-        "keys": [
-            "kComputeMergeStandard_2",
-            "kComputeMergeStandard_2 (128 bit)",
-            "kComputeMergeStandard_3",
-            "kComputeMergeStandard_3 (128 bit)",
-            "kComputeMergeStandard_4",
-            "kComputeMergeStandard_4 (128 bit)",
-            "kComputeMergeStandard_5",
-            "kComputeMergeStandard_5 (128 bit)",
-        ],
-        "labels": [
-            "80-bit (L=2)",
-            "128-bit (L=2)",
-            "80-bit (L=3)",
-            "128-bit (L=3)",
-            "80-bit (L=4)",
-            "128-bit (L=4)",
-            "80-bit (L=5)",
-            "128-bit (L=5)",
+        "series": [
+            {"base_key": "kComputeMergeStandard_2", "label_suffix": "(L=2)"},
+            {"base_key": "kComputeMergeStandard_3", "label_suffix": "(L=3)"},
+            {"base_key": "kComputeMergeStandard_4", "label_suffix": "(L=4)"},
+            {"base_key": "kComputeMergeStandard_5", "label_suffix": "(L=5)"},
         ],
         "xlabel": "n",
         "ylabel": "Execution Time (ms)",
     },
     "Merge(extended)": {
         "title": "Time Cost of Merge (extended mode)",
-        "keys": [
-            "kComputeMergeExtended_2",
-            "kComputeMergeExtended_2 (128 bit)",
-            "kComputeMergeExtended_3",
-            "kComputeMergeExtended_3 (128 bit)",
-            "kComputeMergeExtended_4",
-            "kComputeMergeExtended_4 (128 bit)",
-            "kComputeMergeExtended_5",
-            "kComputeMergeExtended_5 (128 bit)",
-        ],
-        "labels": [
-            "80-bit (L=2)",
-            "128-bit (L=2)",
-            "80-bit (L=3)",
-            "128-bit (L=3)",
-            "80-bit (L=4)",
-            "128-bit (L=4)",
-            "80-bit (L=5)",
-            "128-bit (L=5)",
+        "series": [
+            {"base_key": "kComputeMergeExtended_2", "label_suffix": "(L=2)"},
+            {"base_key": "kComputeMergeExtended_3", "label_suffix": "(L=3)"},
+            {"base_key": "kComputeMergeExtended_4", "label_suffix": "(L=4)"},
+            {"base_key": "kComputeMergeExtended_5", "label_suffix": "(L=5)"},
         ],
         "xlabel": "n",
         "ylabel": "Execution Time (ms)",
     },
     "Encap": {
         "title": "Time Cost of Encap",
-        "keys": ["kComputeEncap", "kComputeEncap (128 bit)"],
-        "labels": ["80-bit", "128-bit"],
+        "series": [
+            {"base_key": "kComputeEncap"},
+        ],
         "xlabel": "n",
         "ylabel": "Execution Time (ms)",
     },
     "Decap": {
         "title": "Time Cost of Decap",
-        "keys": ["kComputeDecap", "kComputeDecap (128 bit)"],
-        "labels": ["80-bit", "128-bit"],
+        "series": [
+            {"base_key": "kComputeDecap"},
+        ],
         "xlabel": "n",
         "ylabel": "Execution Time (ms)",
     },
@@ -248,6 +213,49 @@ def parse_log(filepath: str):
             values = [float(v.strip()) for v in values_str.split(",") if v.strip()]
             data[key.strip()] = values
     return data
+
+
+def extract_security_levels(data: dict):
+    levels = set()
+    pattern = re.compile(r"\((\d+) bit\)$")
+    for key in data:
+        match = pattern.search(key)
+        if match:
+            levels.add(int(match.group(1)))
+    return sorted(levels)
+
+
+def resolve_series(data: dict, series_config: list, security_levels: list):
+    resolved_keys = []
+    resolved_labels = []
+
+    for item in series_config:
+        base_key = item["base_key"]
+        label_suffix = item.get("label_suffix", "")
+        has_plain = base_key in data
+        if has_plain:
+            resolved_keys.append(base_key)
+            resolved_labels.append(f"default {label_suffix}".strip())
+
+        found_level = False
+        for level in security_levels:
+            key = f"{base_key} ({level} bit)"
+            if key not in data:
+                continue
+            found_level = True
+            resolved_keys.append(key)
+            resolved_labels.append(f"{level}-bit {label_suffix}".strip())
+
+        if not has_plain and not found_level:
+            print(f"Warning: no data found for base key '{base_key}'")
+
+    if not resolved_keys:
+        return [], []
+
+    if all(label == "default" for label in resolved_labels):
+        resolved_labels = [None] * len(resolved_labels)
+
+    return resolved_keys, resolved_labels
 
 
 def build_series(data: dict, keys: list, labels: list, limit: int, step: int):
@@ -276,7 +284,6 @@ def build_series(data: dict, keys: list, labels: list, limit: int, step: int):
     base_x = [10 * (i + 1) for i in range(min_len)]
 
     if step > 1:
-        # 始终保留第一个点和最后一个点，避免 step 采样漏掉末尾
         indices = list(range(0, min_len, step))
         if indices[-1] != (min_len - 1):
             indices.append(min_len - 1)
@@ -312,6 +319,11 @@ def main():
         raise FileNotFoundError(f"Log file not found: {args.log}")
 
     data = parse_log(args.log)
+    security_levels = extract_security_levels(data)
+    if security_levels:
+        print(f"Detected security levels: {', '.join(f'{level}-bit' for level in security_levels)}")
+    else:
+        print("Warning: no explicit security level suffix found in log, using plain keys only")
 
     xs_all = []
     ys_all = []
@@ -320,14 +332,14 @@ def main():
     ylabels_all = []
     line_labels_all = []
 
-    # 先构建，再给标题编号，保证跳过空子图后字母仍连续
     tmp = []
     for subplot_name in args.subplots:
         cfg = SUBPLOTS_CONFIG[subplot_name]
+        keys, labels = resolve_series(data, cfg["series"], security_levels)
         xs, ys_lines, labels_kept = build_series(
             data=data,
-            keys=cfg["keys"],
-            labels=cfg["labels"],
+            keys=keys,
+            labels=labels,
             limit=args.limit,
             step=args.step,
         )

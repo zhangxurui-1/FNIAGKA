@@ -25,8 +25,8 @@ g++ -O2 -fPIC -c -I"$ROOT_DIR/include/miracl" \
     "$SOURCE_DIR/big.cpp" "$SOURCE_DIR/brick.cpp" "$SOURCE_DIR/crt.cpp" "$SOURCE_DIR/ebrick.cpp" \
     "$SOURCE_DIR/ebrick2.cpp" "$SOURCE_DIR/ec2.cpp" "$SOURCE_DIR/ecn.cpp" "$SOURCE_DIR/ecnzzn.cpp" \
     "$SOURCE_DIR/flash.cpp" "$SOURCE_DIR/floating.cpp" "$SOURCE_DIR/zzn.cpp" "$SOURCE_DIR/gf2m.cpp" \
-    "$PAIRING_DIR/bls_pair.cpp" "$PAIRING_DIR/ecn4.cpp" "$PAIRING_DIR/zzn2.cpp" "$PAIRING_DIR/zzn4.cpp" \
-    "$PAIRING_DIR/zzn8.cpp" "$PAIRING_DIR/zzn24.cpp"
+    "$PAIRING_DIR/bn_pair.cpp" "$PAIRING_DIR/ecn2.cpp" "$PAIRING_DIR/zzn2.cpp" "$PAIRING_DIR/zzn4.cpp" \
+    "$PAIRING_DIR/zzn12a.cpp"
 
 ar rcs libMIRACL-cpp.a *.o
 mv *.a ../

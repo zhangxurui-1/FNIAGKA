@@ -26,13 +26,15 @@ WriteZZn4(ByteWriter& writer, const ZZn4& value)
 }
 
 void
-WriteZZn8(ByteWriter& writer, const ZZn8& value)
+WriteZZn12(ByteWriter& writer, const ZZn12& value)
 {
     ZZn4 x;
     ZZn4 y;
-    value.get(x, y);
+    ZZn4 z;
+    value.get(x, y, z);
     WriteZZn4(writer, x);
     WriteZZn4(writer, y);
+    WriteZZn4(writer, z);
 }
 } // namespace
 
@@ -65,23 +67,18 @@ ByteWriter::write(const G1& g1)
 void
 ByteWriter::write(const G2& g2)
 {
-    ZZn4 x;
-    ZZn4 y;
+    ZZn2 x;
+    ZZn2 y;
     g2.g.get(x, y);
-    WriteZZn4(*this, x);
-    WriteZZn4(*this, y);
+    WriteZZn2(*this, x);
+    WriteZZn2(*this, y);
 }
 
 void
 ByteWriter::write(const GT& gt)
 {
-    ZZn8 x;
-    ZZn8 y;
-    ZZn8 z;
-    gt.g.get(x, y, z);
-    WriteZZn8(*this, x);
-    WriteZZn8(*this, y);
-    WriteZZn8(*this, z);
+    ZZn12 value = gt.g;
+    WriteZZn12(*this, value);
 }
 
 size_t

@@ -2,16 +2,12 @@
 
 #include <cstdint>
 #include <map>
+#include <ostream>
 #include <unordered_map>
 #include <utility>
 
-// Use Type-3 (asymmetric) pairing on a BLS curve supported by this MIRACL tree.
-// NOTE: In this MIRACL version, `MR_PAIRING_BLS` corresponds to a k=24 BLS curve (BLS24-like),
-// not the modern BLS12-381 curve.
+// Use Type-3 (asymmetric) pairing configured in utils.h.
 // MIRACL pairing API: GT = pairing(G2, G1)
-#define MR_PAIRING_BLS
-
-#include "pairing_3.h"
 #include "utils.h"
 
 #include <memory>
