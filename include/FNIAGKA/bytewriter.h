@@ -1,5 +1,5 @@
 #pragma once
-#include "big.h"
+#include "FNIAGKA/proto.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -28,6 +28,10 @@ class ByteWriter
 
     // byte array
     void write(const uint8_t* data, size_t len);
+    
+    void write(const G1& g1);
+    void write(const G2& g2);
+    void write(const GT& gt);
 
     // NOTE: total_lenth = length + 2B
     // -------------------------

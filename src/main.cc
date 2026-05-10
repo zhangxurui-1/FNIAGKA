@@ -5,6 +5,7 @@
    on BN curves. Pairing API becomes GT = e(G2, G1).
 */
 
+#include "FNIAGKA/bytewriter.h"
 #include "FNIAGKA/pki.h"
 #include "FNIAGKA/proto.h"
 #include "log.h"
@@ -494,36 +495,30 @@ TestUpkUpdateV2(std::shared_ptr<FullParameter> omega, int user_num)
 }
 
 int
-MeasureSpillBits(std::shared_ptr<PublicParameter> pp, const G1& elem)
+MeasureSerializedBits(const G1& elem)
 {
-    G1 value = elem;
-    pp->pfc_->precomp_for_mult(value);
-    char* bytes = nullptr;
-    int byte_len = value.spill(bytes);
-    delete[] bytes;
-    return byte_len * 8;
+    std::vector<uint8_t> bytes;
+    ByteWriter writer(bytes);
+    writer.write(elem);
+    return writer.position() * 8;
 }
 
 int
-MeasureSpillBits(std::shared_ptr<PublicParameter> pp, const G2& elem)
+MeasureSerializedBits(const G2& elem)
 {
-    G2 value = elem;
-    pp->pfc_->precomp_for_mult(value);
-    char* bytes = nullptr;
-    int byte_len = value.spill(bytes);
-    delete[] bytes;
-    return byte_len * 8;
+    std::vector<uint8_t> bytes;
+    ByteWriter writer(bytes);
+    writer.write(elem);
+    return writer.position() * 8;
 }
 
 int
-MeasureSpillBits(std::shared_ptr<PublicParameter> pp, const GT& elem)
+MeasureSerializedBits(const GT& elem)
 {
-    GT value = elem;
-    pp->pfc_->precomp_for_power(value);
-    char* bytes = nullptr;
-    int byte_len = value.spill(bytes);
-    delete[] bytes;
-    return byte_len * 8;
+    std::vector<uint8_t> bytes;
+    ByteWriter writer(bytes);
+    writer.write(elem);
+    return writer.position() * 8;
 }
 
 void
@@ -531,13 +526,13 @@ TestStoreOverhead(std::shared_ptr<PublicParameter> pp)
 {
     GT gt = pp->pfc_->pairing(pp->h_, pp->g0_);
 
-    int g1_bits = MeasureSpillBits(pp, pp->g0_);
-    int g2_bits = MeasureSpillBits(pp, pp->h_);
-    int gt_bits = MeasureSpillBits(pp, gt);
+    int g1_bits = MeasureSerializedBits(pp->g0_);
+    int g2_bits = MeasureSerializedBits(pp->h_);
+    int gt_bits = MeasureSerializedBits(gt);
 
-    std::cout << "G1_bits:" << g1_bits << std::endl;
-    std::cout << "G2_bits:" << g2_bits << std::endl;
-    std::cout << "GT_bits:" << gt_bits << std::endl;
+    INFO("G1_bits:" << g1_bits);
+    INFO("G2_bits:" << g2_bits);
+    INFO("GT_bits:" << gt_bits);
 }
 
 int
