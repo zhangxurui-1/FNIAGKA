@@ -45,3 +45,11 @@ target_link_libraries(main PRIVATE
     MIRACL-cpp
     MIRACL-core
 )
+
+add_executable(random_sequence
+    tools/random_sequence.cc
+)
+
+add_executable(data_corrector
+    tools/data_corrector.cc
+)

@@ -202,6 +202,8 @@ class Metric
     virtual ~Metric();
     void Emit(EmitType type, std::string key);
     void Summarize();
+    void Summarize(std::ostream& os);
+    void Reset();
 
     // Generate a new stat key
     std::string GenerateStatKey(EmitType type);

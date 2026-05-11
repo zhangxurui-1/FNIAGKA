@@ -15,6 +15,7 @@
 #include <chrono>
 #include <cstdint>
 #include <ctime>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -556,13 +557,153 @@ TestStoreOverhead(std::shared_ptr<PublicParameter> pp)
     INFO("GT_bits:" << gt_bits);
 }
 
+void
+RunBenchmarkCases(int universe_size,
+                  int active_group_size,
+                  std::shared_ptr<FullParameter> omega,
+                  std::vector<std::shared_ptr<FNIAGKA::User>>& users)
+{
+    if (active_group_size < 2 || active_group_size > users.size())
+    {
+        FATAL_ERROR("invalid active_group_size " << active_group_size);
+    }
+
+    auto& metric = Singleton<Metric>::GetInstance();
+    auto group_info = GroupInfo::NewGroupInfo(universe_size);
+    for (int i = 0; i < active_group_size - 1; i++)
+    {
+        group_info.Occupy(users[i]->uid_);
+    }
+
+    std::vector<EncryptionKey> encryption_keys(users.size());
+    std::vector<DecryptionKey> decryption_keys(users.size());
+    for (int i = 0; i < active_group_size - 1; i++)
+    {
+        auto key = metric.GenerateStatKey(EmitType::kComputeAgree);
+        metric.Emit(EmitType::kComputeAgree, key);
+        FNIAGKA::Agree(universe_size,
+                       omega,
+                       users[i],
+                       std::make_shared<GroupInfo>(group_info),
+                       encryption_keys[i],
+                       decryption_keys[i]);
+        metric.Emit(EmitType::kComputeAgree, key);
+    }
+
+    TestEncapDecap(universe_size,
+                   omega,
+                   std::make_shared<GroupInfo>(group_info),
+                   users,
+                   encryption_keys[0],
+                   decryption_keys,
+                   group_info.GetMembers());
+
+    INFO("============ Test Add ============");
+
+    int new_user_index = active_group_size - 1;
+    auto uid_to_be_added = users[new_user_index]->uid_;
+    for (int existing_user_index = 0; existing_user_index < new_user_index; existing_user_index++)
+    {
+        auto key = metric.GenerateStatKey(EmitType::kComputeAddUpd);
+        metric.Emit(EmitType::kComputeAddUpd, key);
+        FNIAGKA::AddUser(universe_size,
+                         omega,
+                         users[existing_user_index],
+                         std::make_shared<GroupInfo>(group_info),
+                         uid_to_be_added,
+                         encryption_keys[existing_user_index],
+                         decryption_keys[existing_user_index]);
+        metric.Emit(EmitType::kComputeAddUpd, key);
+    }
+
+    auto key = metric.GenerateStatKey(EmitType::kComputeAddGen);
+    metric.Emit(EmitType::kComputeAddGen, key);
+    FNIAGKA::AddUser(universe_size,
+                     omega,
+                     users[new_user_index],
+                     std::make_shared<GroupInfo>(group_info),
+                     uid_to_be_added,
+                     encryption_keys[new_user_index],
+                     decryption_keys[new_user_index]);
+    metric.Emit(EmitType::kComputeAddGen, key);
+
+    group_info.Occupy(uid_to_be_added);
+    TestEncapDecap(universe_size,
+                   omega,
+                   std::make_shared<GroupInfo>(group_info),
+                   users,
+                   encryption_keys[0],
+                   decryption_keys,
+                   group_info.GetMembers());
+
+    INFO("============ Test Remove ============");
+    auto uid_to_be_removed = users[new_user_index]->uid_;
+    for (int i = 0; i < active_group_size - 1; i++)
+    {
+        key = metric.GenerateStatKey(EmitType::kComputeRemove);
+        metric.Emit(EmitType::kComputeRemove, key);
+        FNIAGKA::RemoveUser(universe_size,
+                            omega,
+                            users[i],
+                            std::make_shared<GroupInfo>(group_info),
+                            uid_to_be_removed,
+                            encryption_keys[i],
+                            decryption_keys[i]);
+        metric.Emit(EmitType::kComputeRemove, key);
+    }
+    group_info.Vacate(uid_to_be_removed);
+    TestEncapDecap(universe_size,
+                   omega,
+                   std::make_shared<GroupInfo>(group_info),
+                   users,
+                   encryption_keys[0],
+                   decryption_keys,
+                   group_info.GetMembers());
+
+    INFO("============ Test Split ============");
+    std::unordered_map<int64_t, std::shared_ptr<FNIAGKA::User>> users_for_split_merge;
+    std::unordered_map<int64_t, EncryptionKey> encryption_keys_for_split_merge;
+    std::unordered_map<int64_t, DecryptionKey> decryption_keys_for_split_merge;
+    for (int i = 0; i < active_group_size - 1; i++)
+    {
+        users_for_split_merge[users[i]->uid_] = users[i];
+        encryption_keys_for_split_merge[users[i]->uid_] = encryption_keys[i];
+        decryption_keys_for_split_merge[users[i]->uid_] = decryption_keys[i];
+    }
+
+    TestSplitMergeGroup(universe_size,
+                        omega,
+                        2,
+                        users_for_split_merge,
+                        encryption_keys_for_split_merge,
+                        decryption_keys_for_split_merge);
+    TestSplitMergeGroup(universe_size,
+                        omega,
+                        3,
+                        users_for_split_merge,
+                        encryption_keys_for_split_merge,
+                        decryption_keys_for_split_merge);
+    TestSplitMergeGroup(universe_size,
+                        omega,
+                        4,
+                        users_for_split_merge,
+                        encryption_keys_for_split_merge,
+                        decryption_keys_for_split_merge);
+    TestSplitMergeGroup(universe_size,
+                        omega,
+                        5,
+                        users_for_split_merge,
+                        encryption_keys_for_split_merge,
+                        decryption_keys_for_split_merge);
+}
+
 int
 main(int argc, char* argv[])
 {
     if (argc < 3)
     {
-        std::cout << "Usage: " << argv[0] << " <security_level> <max_group_size> [test_type]"
-                  << std::endl;
+        std::cout << "Usage: " << argv[0]
+                  << " <security_level> <max_group_size> [test_type] [sweep_output_dir]" << std::endl;
         return 1;
     }
     int security_level = std::stoi(argv[1]);
@@ -571,6 +712,11 @@ main(int argc, char* argv[])
     if (argc >= 4)
     {
         test_type = argv[3];
+    }
+    std::string sweep_output_dir;
+    if (argc >= 5)
+    {
+        sweep_output_dir = argv[4];
     }
 
 #ifdef MR_PAIRING_BLS
@@ -653,114 +799,34 @@ main(int argc, char* argv[])
     }
     std::cout << "UserGen DONE" << std::endl;
 
-    auto group_info = GroupInfo::NewGroupInfo(max_group_size);
-    for (int i = 0; i < users.size() - 1; i++)
+    if (test_type == "sweep")
     {
-        group_info.Occupy(users[i]->uid_);
+        metric.Reset();
+        for (int group_size = 10; group_size <= max_group_size; group_size += 10)
+        {
+            INFO("============ Sweep group_size=" << group_size << " ============");
+            RunBenchmarkCases(max_group_size, group_size, omega, users);
+            if (sweep_output_dir.empty())
+            {
+                metric.Summarize();
+            }
+            else
+            {
+                auto out_file = sweep_output_dir + "/exp_security" + std::to_string(security_level) +
+                                "_size" + std::to_string(group_size) + ".log";
+                std::ofstream ofs(out_file);
+                if (!ofs)
+                {
+                    FATAL_ERROR("failed to open sweep output file " << out_file);
+                }
+                metric.Summarize(ofs);
+            }
+            metric.Reset();
+        }
+        return 0;
     }
 
-    std::vector<EncryptionKey> encryption_keys(user_total_num);
-    std::vector<DecryptionKey> decryption_keys(user_total_num);
-    for (int i = 0; i < users.size() - 1; i++)
-    {
-        key = metric.GenerateStatKey(EmitType::kComputeAgree);
-        metric.Emit(EmitType::kComputeAgree, key);
-        FNIAGKA::Agree(max_group_size,
-                       omega,
-                       users[i],
-                       std::make_shared<GroupInfo>(group_info),
-                       encryption_keys[i],
-                       decryption_keys[i]);
-        metric.Emit(EmitType::kComputeAgree, key);
-    }
-
-    TestEncapDecap(max_group_size,
-                   omega,
-                   std::make_shared<GroupInfo>(group_info),
-                   users,
-                   encryption_keys[0],
-                   decryption_keys,
-                   group_info.GetMembers());
-
-    INFO("============ Test Add ============");
-
-    int new_user_index = user_total_num - 1;
-    auto uid_to_be_added = users[new_user_index]->uid_;
-    for (int existing_user_index = 0; existing_user_index < new_user_index; existing_user_index++)
-    {
-        key = metric.GenerateStatKey(EmitType::kComputeAddUpd);
-        metric.Emit(EmitType::kComputeAddUpd, key);
-        FNIAGKA::AddUser(max_group_size,
-                         omega,
-                         users[existing_user_index],
-                         std::make_shared<GroupInfo>(group_info),
-                         uid_to_be_added,
-                         encryption_keys[existing_user_index],
-                         decryption_keys[existing_user_index]);
-        metric.Emit(EmitType::kComputeAddUpd, key);
-    }
-
-    key = metric.GenerateStatKey(EmitType::kComputeAddGen);
-    metric.Emit(EmitType::kComputeAddGen, key);
-    FNIAGKA::AddUser(max_group_size,
-                     omega,
-                     users[new_user_index],
-                     std::make_shared<GroupInfo>(group_info),
-                     uid_to_be_added,
-                     encryption_keys[new_user_index],
-                     decryption_keys[new_user_index]);
-    metric.Emit(EmitType::kComputeAddGen, key);
-
-    group_info.Occupy(uid_to_be_added);
-    TestEncapDecap(max_group_size,
-                   omega,
-                   std::make_shared<GroupInfo>(group_info),
-                   users,
-                   encryption_keys[0],
-                   decryption_keys,
-                   group_info.GetMembers());
-
-    INFO("============ Test Remove ============");
-    auto uid_to_be_removed = users[users.size() - 1]->uid_;
-    for (int j = 0; j < users.size() - 1; j++)
-    {
-        key = metric.GenerateStatKey(EmitType::kComputeRemove);
-        metric.Emit(EmitType::kComputeRemove, key);
-        FNIAGKA::RemoveUser(max_group_size,
-                            omega,
-                            users[j],
-                            std::make_shared<GroupInfo>(group_info),
-                            uid_to_be_removed,
-                            encryption_keys[j],
-                            decryption_keys[j]);
-
-        metric.Emit(EmitType::kComputeRemove, key);
-    }
-    group_info.Vacate(uid_to_be_removed);
-    TestEncapDecap(max_group_size,
-                   omega,
-                   std::make_shared<GroupInfo>(group_info),
-                   users,
-                   encryption_keys[0],
-                   decryption_keys,
-                   group_info.GetMembers());
-
-    INFO("============ Test Split ============");
-    std::unordered_map<int64_t, std::shared_ptr<FNIAGKA::User>> users_for_split_merge;
-    std::unordered_map<int64_t, EncryptionKey> encryption_keys_for_split_merge;
-    std::unordered_map<int64_t, DecryptionKey> decryption_keys_for_split_merge;
-    for (int i = 0; i < users.size() - 1; i++)
-    {
-        users_for_split_merge[users[i]->uid_] = users[i];
-        encryption_keys_for_split_merge[users[i]->uid_] = encryption_keys[i];
-        decryption_keys_for_split_merge[users[i]->uid_] = decryption_keys[i];
-    }
-
-    TestSplitMergeGroup(max_group_size, omega, 2, users_for_split_merge, encryption_keys_for_split_merge, decryption_keys_for_split_merge);
-    TestSplitMergeGroup(max_group_size, omega, 3, users_for_split_merge, encryption_keys_for_split_merge, decryption_keys_for_split_merge);
-    TestSplitMergeGroup(max_group_size, omega, 4, users_for_split_merge, encryption_keys_for_split_merge, decryption_keys_for_split_merge);
-    TestSplitMergeGroup(max_group_size, omega, 5, users_for_split_merge, encryption_keys_for_split_merge, decryption_keys_for_split_merge);
-
+    RunBenchmarkCases(max_group_size, user_total_num, omega, users);
     metric.Summarize();
 
     // TestSAAGKA(security_level, pp);

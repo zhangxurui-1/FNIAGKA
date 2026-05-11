@@ -52,11 +52,17 @@ Metric::Emit(EmitType type, std::string key)
 void
 Metric::Summarize()
 {
-    std::cout << "Metric Summary:" << std::endl;
+    Summarize(std::cout);
+}
+
+void
+Metric::Summarize(std::ostream& os)
+{
+    os << "Metric Summary:" << std::endl;
     for (size_t i = 0; i < stats_real_.size(); i++)
     {
         auto& st = stats_real_[i];
-        std::cout << "\t" << EmitType(i) << ":" << st.size() << " events" << std::endl;
+        os << "\t" << EmitType(i) << ":" << st.size() << " events" << std::endl;
         if (st.empty())
         {
             continue;
@@ -64,11 +70,25 @@ Metric::Summarize()
         Microseconds total(0);
         for (auto& p : st)
         {
-            std::cout << "\t\t" << p.first << ":" << p.second.count() << " us" << std::endl;
+            os << "\t\t" << p.first << ":" << p.second.count() << " us" << std::endl;
             total += p.second;
         }
-        std::cout << "\t\tAvg:" << total.count() / st.size() << " us\n\n";
+        os << "\t\tAvg:" << total.count() / st.size() << " us\n\n";
     }
+}
+
+void
+Metric::Reset()
+{
+    for (auto& pending : pending_evs_real_)
+    {
+        pending.clear();
+    }
+    for (auto& stats : stats_real_)
+    {
+        stats.clear();
+    }
+    std::fill(event_counter_.begin(), event_counter_.end(), 0);
 }
 
 std::string

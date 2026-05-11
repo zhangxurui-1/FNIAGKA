@@ -674,8 +674,6 @@ FNIAGKA::MergeGroupStandard(int64_t eta,
     while (j > 0)
     {
         GroupInfo& group_info_from = new_eks[j].group_info_;
-        INFO("[MergeGroupStandard] begin round j=" << j << ", new_eks[j].group_info=" << new_eks[j].group_info_
-                                                   << ", group_info_from=" << group_info_from);
         if (group_info_from.member_num_ == 0)
         {
             new_eks.erase(new_eks.begin() + j);
@@ -726,11 +724,6 @@ FNIAGKA::MergeGroupStandard(int64_t eta,
 
                     // step 2: update old ek
                     group_info_from.Vacate(uid);
-                    INFO("[MergeGroupStandard] migrated uid=" << uid << ", slot=" << slot << ", from j=" << j
-                                                             << " to k=" << k << ", updated group_info_from="
-                                                             << group_info_from << ", current new_eks[j].group_info="
-                                                             << new_eks[j].group_info_);
-
                     new_eks[j].a_ = new_eks[j].a_ + omega->u_[slot] + (-upk->uj_[slot]);
                     if (slot != omega->pp_->max_group_size_ - 1)
                     {
@@ -746,16 +739,12 @@ FNIAGKA::MergeGroupStandard(int64_t eta,
 
             if (!migrate_success)
             {
-                INFO("[MergeGroupStandard] abort on uid=" << uid << ", slot=" << slot << ", j=" << j
-                                                          << ", group_info_from=" << group_info_from);
                 abort = true;
                 break;
             }
         }
         if (abort)
         {
-            INFO("[MergeGroupStandard] abort round j=" << j << ", new_eks[j].group_info=" << new_eks[j].group_info_
-                                                       << ", group_info_from=" << group_info_from);
             break;
         }
 
@@ -764,11 +753,6 @@ FNIAGKA::MergeGroupStandard(int64_t eta,
             new_eks.erase(new_eks.begin() + j);
         }
         j--;
-    }
-
-    for (int i = 0; i < new_eks.size(); i++)
-    {
-        INFO("[MergeGroupStandard] final new_eks[" << i << "].group_info=" << new_eks[i].group_info_);
     }
 
     // compute dk

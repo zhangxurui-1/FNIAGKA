@@ -133,7 +133,7 @@ SUBPLOTS_CONFIG = {
     "Add": {
         "title": "Time Cost of Add",
         "series": [
-            {"base_key": "kComputeAgree", "label_suffix": "(for new user)"},
+            {"base_key": "kComputeAddGen", "label_suffix": "(for new user)"},
             {"base_key": "kComputeAddUpd", "label_suffix": "(for old user)"},
         ],
         "xlabel": "n",
