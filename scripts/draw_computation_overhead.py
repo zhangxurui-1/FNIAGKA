@@ -1,9 +1,22 @@
 import math
 import matplotlib.pyplot as plt
 
+# Times New Roman + 较大字号（论文图常用）
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.serif": ["Times New Roman", "Times", "DejaVu Serif"],
+    "font.size": 14,
+    "axes.titlesize": 15,
+    "axes.labelsize": 14,
+    "legend.fontsize": 12,
+    "xtick.labelsize": 12,
+    "ytick.labelsize": 12,
+})
+
+
 def draw_n(xs, ys_list, titles,
            x_labels, y_labels, line_labels_list,
-           max_cols=3, figsize=(5, 4), save_path=None):
+           max_cols=4, figsize=(5, 4), save_path=None):
     """
     xs:                [x1, x2, ..., xn]  (每个子图一个 x)
     ys_list:           [[ys1_lines], [ys2_lines], ..., [ysn_lines]]
@@ -12,7 +25,7 @@ def draw_n(xs, ys_list, titles,
     x_labels:          [xlabel1, ..., xlabeln]
     y_labels:          [ylabel1, ..., ylabeln]
     line_labels_list:  [[labels1], [labels2], ..., [labelsn]]
-    max_cols:          每行最多子图数量（默认 3）
+    max_cols:          每行最多子图数量（默认 4）
     figsize:           单个子图的宽高 (w, h)
     """
 
@@ -67,37 +80,9 @@ group_size = [
     [10, 20, 30, 40, 50],
     [10, 20, 30, 40, 50],
     [10, 20, 30, 40, 50],
-    [10, 20, 30, 40, 50],
-    [10, 20, 30, 40, 50],
-    [10, 20, 30, 40, 50],
-    [10, 20, 30, 40, 50]
 ]
 
-ys_list=[
-    # Setup
-    [
-        [17.488, 18.628, 28.352, 36.006, 42.89],
-        [199.688, 347.706, 497.628, 680.787, 813.665]
-    ],
-
-    # PNGen
-    [
-        [36.052, 137.06, 314.148, 548.22, 818.783],
-        [349.815, 1271.11, 2536.53, 4405.91, 7040.31]
-    ],
-
-    # Negotiate
-    [
-        [0.795, 4.401, 9.746, 15.83, 21.469],
-        [5.987, 19.856, 42.891, 86.666, 121.574]
-    ],
-
-    # UserGen
-    [
-        [71.604, 281.22, 621.76, 1052.62, 1581.95],
-        [655.8, 2369.02, 5329.77, 9223.1, 14038.8]
-    ],
-
+ys_list = [
     # Agreement
     [
         [0.168, 0.316, 0.458, 0.622, 0.751],
@@ -167,25 +152,19 @@ ys_list=[
     ]
 ]
 
+# 仅保留原图中第 5–12 个子图对应内容，标题按 (a)–(h) 重排
 titles = [
-    "(a) Time Cost of Setup",
-    "(b) Time Cost of PNGen",
-    "(c) Time Cost of Negotiate",
-    "(d) Time Cost of UserGen",
-    "(e) Time Cost of Agreement",
-    "(f) Time Cost of Add",
-    "(g) Time Cost of Remove",
-    "(h) Time Cost of Split",
-    "(i) Time Cost of Merge (standard mode)",
-    "(j) Time Cost of Merge (extended mode)",
-    "(k) Time Cost of Encap",
-    "(l) Time Cost of Decap"]
+    "(a) Time Cost of Agreement",
+    "(b) Time Cost of Add",
+    "(c) Time Cost of Remove",
+    "(d) Time Cost of Split",
+    "(e) Time Cost of Merge (standard mode)",
+    "(f) Time Cost of Merge (extended mode)",
+    "(g) Time Cost of Encap",
+    "(h) Time Cost of Decap",
+]
 
 line_labels_list = [
-    ["80-bit", "128-bit"],
-    ["80-bit", "128-bit"],
-    ["80-bit", "128-bit"],
-    ["80-bit", "128-bit"],
     ["80-bit", "128-bit"],
     ["80-bit (for new user)", "128-bit (for new user)", "80-bit (for old user)", "128-bit (for old user)"],
     ["80-bit", "128-bit"],
@@ -193,30 +172,22 @@ line_labels_list = [
     ["80-bit (L=2)", "128-bit (L=2)", "80-bit (L=3)", "128-bit (L=3)", "80-bit (L=4)", "128-bit (L=4)", "80-bit (L=5)", "128-bit (L=5)"],
     ["80-bit (L=2)", "128-bit (L=2)", "80-bit (L=3)", "128-bit (L=3)", "80-bit (L=4)", "128-bit (L=4)", "80-bit (L=5)", "128-bit (L=5)"],
     ["80-bit", "128-bit"],
-    ["80-bit", "128-bit"]
+    ["80-bit", "128-bit"],
 ]
 
-x_labels = ["N", "N", "N", "N", "n", "n", "n", "n", "n", "n", "n", "n"]
-y_labels = ["Execution Time (ms)",
-            "Execution Time (ms)",
-            "Execution Time (ms)",
-            "Execution Time (ms)",
-            "Execution Time (ms)",
-            "Execution Time (ms)",
-            "Execution Time (ms)",
-            "Execution Time (ms)",
-            "Execution Time (ms)",
-            "Execution Time (ms)",
-            "Execution Time (ms)",
-            "Execution Time (ms)"
-        ]
+x_labels = ["n"] * 8
+y_labels = ["Execution Time (ms)"] * 8
 
-draw_n(group_size, ys_list,
-       titles,
-       x_labels, 
-       y_labels,
-       line_labels_list,
-       save_path="/Users/zxr/workspace/FNIAGKA/figures/proto_computation_cost.pdf")
+draw_n(
+    group_size,
+    ys_list,
+    titles,
+    x_labels,
+    y_labels,
+    line_labels_list,
+    max_cols=4,
+    save_path="/Users/zxr/workspace/FNIAGKA/figures/proto_computation_cost.pdf",
+)
 
 
 # kComputeAddGen:[0.025, 0.03, 0.053, 0.049, 0.055, ]

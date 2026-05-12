@@ -45,53 +45,37 @@ def bits_to_bytes(bits: int):
     return bits / 8.0
 
 
-def build_series(g1_bits: int, g2_bits: int, gt_bits: int, max_group_size: int, step: int):
+def build_series(g1_bits: int, g2_bits: int, max_group_size: int, step: int):
     group_sizes = list(range(step, max_group_size + 1, step))
 
     g1_bytes = bits_to_bytes(g1_bits)
     g2_bytes = bits_to_bytes(g2_bits)
 
     parameter_upk_sizes_mb = []
-    ek_sizes_b = []
-    dk_sizes_b = []
 
     for n in group_sizes:
         parameter_upk_bytes = (2 * n) * g1_bytes + (n * n - n) * g2_bytes
 
         parameter_upk_sizes_mb.append(parameter_upk_bytes / 1024 / 1024)
-        ek_sizes_b.append(2 * g1_bytes)
-        dk_sizes_b.append(g2_bytes)
 
-    return group_sizes, parameter_upk_sizes_mb, ek_sizes_b, dk_sizes_b
+    return group_sizes, parameter_upk_sizes_mb
 
 
-def draw_two(group_sizes,
-             parameter_upk_sizes_mb,
-             ek_sizes_b,
-             dk_sizes_b,
-             save_path=None):
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+def draw_parameter_upk(group_sizes, parameter_upk_sizes_mb, save_path=None):
+    fig, ax = plt.subplots(figsize=(6.5, 4))
 
-    axes[0].plot(group_sizes, parameter_upk_sizes_mb, marker='o', linewidth=2)
-    axes[0].set_title('Storage Cost of system parameter/upk')
-    axes[0].set_xlabel('N')
-    axes[0].set_ylabel('Size (MB)')
-    axes[0].grid(True, linestyle='--', alpha=0.5)
-
-    axes[1].plot(group_sizes, ek_sizes_b, marker='o', linewidth=2, label='ek')
-    axes[1].plot(group_sizes, dk_sizes_b, marker='s', linewidth=2, label='dk')
-    axes[1].set_title('Storage Cost of ek/dk')
-    axes[1].set_xlabel('N')
-    axes[1].set_ylabel('Size (B)')
-    axes[1].legend(frameon=False)
-    axes[1].grid(True, linestyle='--', alpha=0.5)
+    ax.plot(group_sizes, parameter_upk_sizes_mb, marker='o', linewidth=2)
+    ax.set_title('Storage Cost of system parameter/upk')
+    ax.set_xlabel('N')
+    ax.set_ylabel('Size (MB)')
+    ax.grid(True, linestyle='--', alpha=0.5)
 
     plt.tight_layout()
 
     if save_path:
         plt.savefig(save_path, bbox_inches='tight')
-
-    plt.show()
+    else:
+        plt.show()
 
 
 def main():
@@ -112,21 +96,14 @@ def main():
         raise ValueError('--step must be positive')
 
     sizes = parse_size_log(args.log)
-    group_sizes, parameter_upk_sizes_gb, ek_sizes_kb, dk_sizes_kb = build_series(
+    group_sizes, parameter_upk_sizes_mb = build_series(
         sizes['G1_bits'],
         sizes['G2_bits'],
-        sizes['GT_bits'],
         args.max_group_size,
         args.step,
     )
 
-    draw_two(
-        group_sizes,
-        parameter_upk_sizes_gb,
-        ek_sizes_kb,
-        dk_sizes_kb,
-        save_path=args.save,
-    )
+    draw_parameter_upk(group_sizes, parameter_upk_sizes_mb, save_path=args.save)
 
 
 if __name__ == '__main__':

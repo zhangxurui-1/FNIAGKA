@@ -2,7 +2,7 @@
 
 set -e
 
-export ROOT_DIR="/cloudide/workspace/workspace_fniagka/FNIAGKA"
+export ROOT_DIR="/Users/zxr/workspace/FNIAGKA"
 
 BUILD_MODE="${1:-release}"
 
