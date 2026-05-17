@@ -50,12 +50,12 @@ def setup_plot_style(font_path=None):
         "mathtext.fontset": math_fontset,
         "pdf.fonttype": 42,
         "ps.fonttype": 42,
-        "font.size": 28,
-        "axes.titlesize": 28,
-        "axes.labelsize": 28,
+        "font.size": 36,
+        "axes.titlesize": 36,
+        "axes.labelsize": 36,
         "legend.fontsize": 21,
-        "xtick.labelsize": 24,
-        "ytick.labelsize": 24,
+        "xtick.labelsize": 32,
+        "ytick.labelsize": 32,
         "axes.linewidth": 1.0,
         "lines.linewidth": 1.8,
         "figure.dpi": 300,
@@ -147,7 +147,7 @@ def draw_n(xs,
     for j in range(n, rows * cols):
         axes[j].axis('off')
 
-    fig.subplots_adjust(left=0.07, right=0.99, bottom=0.09, top=0.94, wspace=0.25, hspace=0.3)
+    fig.subplots_adjust(left=0.07, right=0.99, bottom=0.09, top=0.94, wspace=0.25, hspace=0.4)
 
     if save_path:
         plt.savefig(save_path, bbox_inches='tight')
