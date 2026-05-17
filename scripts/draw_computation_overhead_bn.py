@@ -50,12 +50,12 @@ def setup_plot_style(font_path=None):
         "mathtext.fontset": math_fontset,
         "pdf.fonttype": 42,
         "ps.fonttype": 42,
-        "font.size": 21,
-        "axes.titlesize": 21,
-        "axes.labelsize": 21,
-        "legend.fontsize": 15,
-        "xtick.labelsize": 18,
-        "ytick.labelsize": 18,
+        "font.size": 28,
+        "axes.titlesize": 28,
+        "axes.labelsize": 28,
+        "legend.fontsize": 21,
+        "xtick.labelsize": 24,
+        "ytick.labelsize": 24,
         "axes.linewidth": 1.0,
         "lines.linewidth": 1.8,
         "figure.dpi": 300,
@@ -71,7 +71,7 @@ def draw_n(xs,
            y_labels,
            line_labels_list,
            max_cols=4,
-           figsize=(6.2, 5.2),
+           figsize=(8.6, 8.0),
            save_path=None,
            show_marker=False):
     """
@@ -225,7 +225,7 @@ SUBPLOTS_CONFIG = {
         "ylabel": "Execution Time (ms)",
     },
     "Merge(standard)": {
-        "title": "Time Cost of Merge (standard mode)",
+        "title": "Time Cost of Merge\n(standard mode)",
         "series": [
             {"base_key": "kComputeMergeStandard_2", "label_suffix": "(L=2)"},
             {"base_key": "kComputeMergeStandard_3", "label_suffix": "(L=3)"},
@@ -236,7 +236,7 @@ SUBPLOTS_CONFIG = {
         "ylabel": "Execution Time (ms)",
     },
     "Merge(extended)": {
-        "title": "Time Cost of Merge (extended mode)",
+        "title": "Time Cost of Merge\n(extended mode)",
         "series": [
             {"base_key": "kComputeMergeExtended_2", "label_suffix": "(L=2)"},
             {"base_key": "kComputeMergeExtended_3", "label_suffix": "(L=3)"},

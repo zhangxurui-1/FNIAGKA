@@ -44,12 +44,12 @@ def setup_plot_style(font_path=None):
         "mathtext.fontset": math_fontset,
         "pdf.fonttype": 42,
         "ps.fonttype": 42,
-        "font.size": 21,
-        "axes.titlesize": 21,
-        "axes.labelsize": 21,
-        "legend.fontsize": 15,
-        "xtick.labelsize": 18,
-        "ytick.labelsize": 18,
+        "font.size": 28,
+        "axes.titlesize": 28,
+        "axes.labelsize": 28,
+        "legend.fontsize": 21,
+        "xtick.labelsize": 24,
+        "ytick.labelsize": 24,
         "axes.linewidth": 1.0,
         "lines.linewidth": 1.8,
         "figure.dpi": 300,
@@ -99,7 +99,7 @@ def build_series(g1_bits: int, g2_bits: int, max_group_size: int, step: int):
 
 
 def draw_combined(series_data, save_path=None):
-    fig, ax = plt.subplots(figsize=(6.2, 5.2))
+    fig, ax = plt.subplots(figsize=(8.6, 6.0))
     colors = ["C0", "C1", "C2", "C3"]
 
     for i, (label, group_sizes, parameter_upk_mb) in enumerate(series_data):
