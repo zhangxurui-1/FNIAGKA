@@ -9,19 +9,53 @@ import argparse
 import os
 
 import matplotlib.pyplot as plt
+from matplotlib import font_manager
 
 
-def setup_plot_style():
+def resolve_times_font(font_path=None):
+    if font_path:
+        if not os.path.exists(font_path):
+            raise FileNotFoundError(f"Font file not found: {font_path}")
+        font_manager.fontManager.addfont(font_path)
+        return font_manager.FontProperties(fname=font_path).get_name()
+
+    candidates = [
+        "Times New Roman",
+        "Times",
+        "Nimbus Roman No9 L",
+        "Nimbus Roman",
+        "TeX Gyre Termes",
+        "STIXGeneral",
+        "DejaVu Serif",
+    ]
+    available = {f.name for f in font_manager.fontManager.ttflist}
+    for name in candidates:
+        if name in available:
+            return name
+    return "DejaVu Serif"
+
+
+def setup_plot_style(font_path=None):
+    font_name = resolve_times_font(font_path)
+    math_fontset = "stix" if font_name == "STIXGeneral" else "dejavuserif"
     plt.rcParams.update({
         "font.family": "serif",
-        "font.serif": ["Times New Roman", "Times", "DejaVu Serif"],
-        "font.size": 14,
-        "axes.titlesize": 16,
-        "axes.labelsize": 15,
-        "legend.fontsize": 11,
-        "xtick.labelsize": 12,
-        "ytick.labelsize": 12,
+        "font.serif": [font_name],
+        "mathtext.fontset": math_fontset,
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+        "font.size": 21,
+        "axes.titlesize": 21,
+        "axes.labelsize": 21,
+        "legend.fontsize": 15,
+        "xtick.labelsize": 18,
+        "ytick.labelsize": 18,
+        "axes.linewidth": 1.0,
+        "lines.linewidth": 1.8,
+        "figure.dpi": 300,
+        "savefig.dpi": 300,
     })
+    return font_name
 
 
 def parse_size_log(path: str):
@@ -65,7 +99,7 @@ def build_series(g1_bits: int, g2_bits: int, max_group_size: int, step: int):
 
 
 def draw_combined(series_data, save_path=None):
-    fig, ax = plt.subplots(figsize=(6.5, 4))
+    fig, ax = plt.subplots(figsize=(6.2, 5.2))
     colors = ["C0", "C1", "C2", "C3"]
 
     for i, (label, group_sizes, parameter_upk_mb) in enumerate(series_data):
@@ -74,18 +108,32 @@ def draw_combined(series_data, save_path=None):
             group_sizes,
             parameter_upk_mb,
             marker="o",
+            markersize=4,
             linewidth=2,
             label=f"{label}-bit",
             color=c,
         )
 
-    ax.set_title("Storage Cost of system parameter/upk")
+    ax.set_title("Storage Cost of System Parameter/upk", pad=10)
     ax.set_xlabel("N")
     ax.set_ylabel("Size (MB)")
     ax.grid(True, linestyle="--", alpha=0.5)
-    ax.legend(frameon=False)
+    ax.legend(
+        loc="upper left",
+        bbox_to_anchor=(0.02, 0.98),
+        borderaxespad=0.0,
+        frameon=True,
+        facecolor="white",
+        edgecolor="0.8",
+        framealpha=0.92,
+        handlelength=1.4,
+        handletextpad=0.5,
+        labelspacing=0.2,
+        columnspacing=0.8,
+    )
+    ax.margins(x=0.04, y=0.18)
 
-    plt.tight_layout()
+    fig.subplots_adjust(left=0.07, right=0.99, bottom=0.09, top=0.94, wspace=0.25, hspace=0.3)
 
     if save_path:
         plt.savefig(save_path, bbox_inches="tight")
@@ -94,8 +142,6 @@ def draw_combined(series_data, save_path=None):
 
 
 def main():
-    setup_plot_style()
-
     parser = argparse.ArgumentParser(
         description="Draw BN storage overhead (multiple security levels on one figure)"
     )
@@ -110,12 +156,16 @@ def main():
     parser.add_argument("--save", type=str, default=None, help="Path to save the generated figure")
     parser.add_argument("--max-group-size", type=int, default=500, help="Maximum group size N")
     parser.add_argument("--step", type=int, default=10, help="Group size step")
+    parser.add_argument("--font-path", type=str, default=None, help="Path to a Times New Roman .ttf/.otf font file")
     args = parser.parse_args()
 
     if args.max_group_size <= 0:
         raise ValueError("--max-group-size must be positive")
     if args.step <= 0:
         raise ValueError("--step must be positive")
+
+    font_name = setup_plot_style(args.font_path)
+    print(f"Using font: {font_name}")
 
     series_data = []
     for label, log_path in args.series:

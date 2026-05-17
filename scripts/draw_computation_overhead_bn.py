@@ -1,6 +1,13 @@
 # Usage:
 # cd ${ROOT}
 # python3 scripts/draw_computation_overhead_bn.py --log log/log_20260504_231450/exp_data_summary_20260510-154401.log --subplots Agree Add Remove Split "Merge(standard)" "Merge(extended)" Encap Decap --limit 30 --step 3 --marker --save figures/proto_computation_cost_bn.pdf
+# python3 scripts/draw_computation_overhead_bn.py \
+#   --log log/log_20260510_234746/exp_data_summary_corrected.log \
+#   --subplots Agree Add Remove Split "Merge(standard)" "Merge(extended)" Encap Decap \
+#   --step 5 \
+#   --marker \
+#   --save log/log_20260510_234746/proto_computation_cost_bn_corrected.pdf \
+#   --font-path "/usr/share/fonts/truetype/msttcorefonts/Times_New_Roman.ttf" \
 
 import argparse
 import math
@@ -8,19 +15,53 @@ import os
 import re
 
 import matplotlib.pyplot as plt
+from matplotlib import font_manager
 
-def setup_plot_style():
-    # 字体：Times New Roman（若环境缺失会自动回退到 Times/DejaVu Serif）
+
+def resolve_times_font(font_path=None):
+    if font_path:
+        if not os.path.exists(font_path):
+            raise FileNotFoundError(f"Font file not found: {font_path}")
+        font_manager.fontManager.addfont(font_path)
+        return font_manager.FontProperties(fname=font_path).get_name()
+
+    candidates = [
+        "Times New Roman",
+        "Times",
+        "Nimbus Roman No9 L",
+        "Nimbus Roman",
+        "TeX Gyre Termes",
+        "STIXGeneral",
+        "DejaVu Serif",
+    ]
+    available = {f.name for f in font_manager.fontManager.ttflist}
+    for name in candidates:
+        if name in available:
+            return name
+    return "DejaVu Serif"
+
+
+def setup_plot_style(font_path=None):
+    font_name = resolve_times_font(font_path)
+    math_fontset = "stix" if font_name == "STIXGeneral" else "dejavuserif"
     plt.rcParams.update({
         "font.family": "serif",
-        "font.serif": ["Times New Roman", "Times", "DejaVu Serif"],
-        "font.size": 14,
-        "axes.titlesize": 16,
-        "axes.labelsize": 15,
-        "legend.fontsize": 12,
-        "xtick.labelsize": 12,
-        "ytick.labelsize": 12,
+        "font.serif": [font_name],
+        "mathtext.fontset": math_fontset,
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+        "font.size": 21,
+        "axes.titlesize": 21,
+        "axes.labelsize": 21,
+        "legend.fontsize": 15,
+        "xtick.labelsize": 18,
+        "ytick.labelsize": 18,
+        "axes.linewidth": 1.0,
+        "lines.linewidth": 1.8,
+        "figure.dpi": 300,
+        "savefig.dpi": 300,
     })
+    return font_name
 
 
 def draw_n(xs,
@@ -30,7 +71,7 @@ def draw_n(xs,
            y_labels,
            line_labels_list,
            max_cols=4,
-           figsize=(5, 4),
+           figsize=(6.2, 5.2),
            save_path=None,
            show_marker=False):
     """
@@ -69,19 +110,44 @@ def draw_n(xs,
         ax = axes[i]
         labels = line_labels_list[i] or [None] * len(ys_list[i])
         for y, label in zip(ys_list[i], labels):
-            ax.plot(xs[i], y, marker=marker_fmt, linewidth=2, label=label)
+            ax.plot(xs[i], y, marker=marker_fmt, linewidth=2, markersize=4, label=label)
 
-        ax.set_title(titles[i])
+        ax.set_title(titles[i], pad=10)
         ax.set_xlabel(x_labels[i])
         ax.set_ylabel(y_labels[i])
-        if any(label for label in labels):
-            ax.legend(frameon=False)
         ax.grid(True, linestyle='--', alpha=0.5)
+
+        if any(label for label in labels):
+            label_count = sum(1 for label in labels if label)
+            if label_count == 2:
+                ncol = 2
+            elif label_count == 4:
+                ncol = 1
+            elif label_count >= 8:
+                ncol = 2
+            else:
+                ncol = 1
+            ax.legend(
+                loc='upper left',
+                bbox_to_anchor=(0.02, 0.98),
+                borderaxespad=0.0,
+                ncol=ncol,
+                frameon=True,
+                facecolor='white',
+                edgecolor='0.8',
+                framealpha=0.92,
+                handlelength=1.4,
+                handletextpad=0.5,
+                labelspacing=0.2,
+                columnspacing=0.8,
+            )
+
+        ax.margins(x=0.04, y=0.18)
 
     for j in range(n, rows * cols):
         axes[j].axis('off')
 
-    plt.tight_layout()
+    fig.subplots_adjust(left=0.07, right=0.99, bottom=0.09, top=0.94, wspace=0.25, hspace=0.3)
 
     if save_path:
         plt.savefig(save_path, bbox_inches='tight')
@@ -297,8 +363,6 @@ def build_series(data: dict, keys: list, labels: list, limit: int, step: int):
 
 
 def main():
-    setup_plot_style()
-
     parser = argparse.ArgumentParser(description="Draw computation overhead figures from exp_data_summary_xxx.log")
     parser.add_argument("--log", type=str, required=True, help="Path to exp_data_summary_xxx.log")
     parser.add_argument(
@@ -313,10 +377,14 @@ def main():
     parser.add_argument("--limit", type=int, default=None, help="截断数据点个数（每条线取前 limit 个点）")
     parser.add_argument("--step", type=int, default=1, help="稀疏采样步长：每 step 个点取 1 个（默认 1 不稀疏）")
     parser.add_argument("--marker", action="store_true", help="显示每个数据点的小圆点 marker（默认不显示）")
+    parser.add_argument("--font-path", type=str, default=None, help="Path to a Times New Roman .ttf/.otf font file")
     args = parser.parse_args()
 
     if not os.path.exists(args.log):
         raise FileNotFoundError(f"Log file not found: {args.log}")
+
+    font_name = setup_plot_style(args.font_path)
+    print(f"Using font: {font_name}")
 
     data = parse_log(args.log)
     security_levels = extract_security_levels(data)
