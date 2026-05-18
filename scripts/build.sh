@@ -2,7 +2,7 @@
 
 set -e
 
-export ROOT_DIR="/Users/zxr/workspace/FNIAGKA"
+export ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 BUILD_MODE="${1:-release}"
 

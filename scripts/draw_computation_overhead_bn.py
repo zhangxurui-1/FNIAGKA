@@ -53,7 +53,7 @@ def setup_plot_style(font_path=None):
         "font.size": 36,
         "axes.titlesize": 36,
         "axes.labelsize": 36,
-        "legend.fontsize": 21,
+        "legend.fontsize": 28,
         "xtick.labelsize": 32,
         "ytick.labelsize": 32,
         "axes.linewidth": 1.0,
@@ -71,9 +71,10 @@ def draw_n(xs,
            y_labels,
            line_labels_list,
            max_cols=4,
-           figsize=(8.6, 8.0),
+           figsize=(8.6, 9.0),
            save_path=None,
-           show_marker=False):
+           show_marker=False,
+           legend_alpha=0.92):
     """
     xs:                [x1, x2, ..., xn]  (每个子图一个 x)
     ys_list:           [[ys1_lines], [ys2_lines], ..., [ysn_lines]]
@@ -135,7 +136,7 @@ def draw_n(xs,
                 frameon=True,
                 facecolor='white',
                 edgecolor='0.8',
-                framealpha=0.92,
+                framealpha=legend_alpha,
                 handlelength=1.4,
                 handletextpad=0.5,
                 labelspacing=0.2,
@@ -378,10 +379,13 @@ def main():
     parser.add_argument("--step", type=int, default=1, help="稀疏采样步长：每 step 个点取 1 个（默认 1 不稀疏）")
     parser.add_argument("--marker", action="store_true", help="显示每个数据点的小圆点 marker（默认不显示）")
     parser.add_argument("--font-path", type=str, default=None, help="Path to a Times New Roman .ttf/.otf font file")
+    parser.add_argument("--legend-alpha", type=float, default=0.92, help="Legend frame transparency in [0,1], where 1 is opaque")
     args = parser.parse_args()
 
     if not os.path.exists(args.log):
         raise FileNotFoundError(f"Log file not found: {args.log}")
+    if not (0.0 <= args.legend_alpha <= 1.0):
+        raise ValueError(f"--legend-alpha must be in [0,1], got {args.legend_alpha}")
 
     font_name = setup_plot_style(args.font_path)
     print(f"Using font: {font_name}")
@@ -437,6 +441,7 @@ def main():
         line_labels_all,
         save_path=args.save,
         show_marker=args.marker,
+        legend_alpha=args.legend_alpha,
     )
 
 

@@ -1,128 +1,264 @@
+# Usage:
+# cd ${ROOT}
+# python3 scripts/draw_test_upk_update_v2.py \
+#   --log-dir log/log_test_upk_update_v2_20260517_161738 \
+#   --save figures/test_upk_update_v2.pdf \
+#   --font-path "/usr/share/fonts/truetype/msttcorefonts/Times_New_Roman.ttf"
+
+import argparse
 import math
+import os
+import re
+
 import matplotlib.pyplot as plt
+from matplotlib import font_manager
 
-def draw_n(xs, ys_list, titles,
-           x_labels, y_labels, line_labels_list,
-           max_cols=3, figsize=(5, 4), save_path=None):
-    """
-    xs:                [x1, x2, ..., xn]  (每个子图一个 x)
-    ys_list:           [[ys1_lines], [ys2_lines], ..., [ysn_lines]]
-                       其中 ys_i_lines = [y_line1, y_line2, ...]
-    titles:            [title1, ..., titlen]
-    x_labels:          [xlabel1, ..., xlabeln]
-    y_labels:          [ylabel1, ..., ylabeln]
-    line_labels_list:  [[labels1], [labels2], ..., [labelsn]]
-    max_cols:          每行最多子图数量（默认 3）
-    figsize:           单个子图的宽高 (w, h)
-    """
 
-    n = len(xs)
-    # -------- 防呆校验（强烈建议保留）--------
-    if not (len(ys_list) == len(titles) == len(x_labels) == len(y_labels) == len(line_labels_list) == n):
-        raise ValueError(
-            f"Length mismatch: len(xs)={n}, len(ys_list)={len(ys_list)}, len(titles)={len(titles)}, "
-            f"len(x_labels)={len(x_labels)}, len(y_labels)={len(y_labels)}, len(line_labels_list)={len(line_labels_list)}"
-        )
+def resolve_times_font(font_path=None):
+    if font_path:
+        if not os.path.exists(font_path):
+            raise FileNotFoundError(f"Font file not found: {font_path}")
+        font_manager.fontManager.addfont(font_path)
+        return font_manager.FontProperties(fname=font_path).get_name()
+
+    candidates = [
+        "Times New Roman",
+        "Times",
+        "Nimbus Roman No9 L",
+        "Nimbus Roman",
+        "TeX Gyre Termes",
+        "STIXGeneral",
+        "DejaVu Serif",
+    ]
+    available = {f.name for f in font_manager.fontManager.ttflist}
+    for name in candidates:
+        if name in available:
+            return name
+    return "DejaVu Serif"
+
+
+def setup_plot_style(font_path=None):
+    font_name = resolve_times_font(font_path)
+    math_fontset = "stix" if font_name == "STIXGeneral" else "dejavuserif"
+    plt.rcParams.update({
+        "font.family": "serif",
+        "font.serif": [font_name],
+        "mathtext.fontset": math_fontset,
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+        "font.size": 36,
+        "axes.titlesize": 36,
+        "axes.labelsize": 36,
+        "legend.fontsize": 21,
+        "xtick.labelsize": 32,
+        "ytick.labelsize": 32,
+        "axes.linewidth": 1.0,
+        "lines.linewidth": 1.8,
+        "figure.dpi": 300,
+        "savefig.dpi": 300,
+    })
+    return font_name
+
+
+def parse_experiment_log(path):
+    metrics = {}
+    current_metric = None
+    with open(path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            metric_match = re.match(r"^(k[A-Za-z0-9_]+):(\d+) events$", line)
+            if metric_match:
+                current_metric = metric_match.group(1)
+                continue
+            avg_match = re.match(r"^Avg:([0-9.]+) us$", line)
+            if current_metric and avg_match:
+                metrics[current_metric] = float(avg_match.group(1)) / 1000.0
+                current_metric = None
+    return metrics
+
+
+def collect_results(log_dir):
+    file_pattern = re.compile(r"exp_security(\d+)_size(\d+)\.log$")
+    results = {}
+    for name in sorted(os.listdir(log_dir)):
+        match = file_pattern.match(name)
+        if not match:
+            continue
+        security_level = int(match.group(1))
+        group_size = int(match.group(2))
+        metrics = parse_experiment_log(os.path.join(log_dir, name))
+        if not metrics:
+            continue
+        if security_level not in results:
+            results[security_level] = {}
+        results[security_level][group_size] = metrics
+
+    if not results:
+        raise RuntimeError(f"No valid experiment logs found in {log_dir}")
+    return results
+
+
+def build_launch_subplot(results, security_level):
+    launch_keys = [
+        "kComputeUpdateUpkLaunchV2",
+        "kComputeUpdateUpkLaunchV2_2",
+        "kComputeUpdateUpkLaunchV2_3",
+        "kComputeUpdateUpkLaunchV2_4",
+        "kComputeUpdateUpkLaunchV2_5",
+    ]
+    launch_labels = ["L=1", "L=2", "L=3", "L=4", "L=5"]
+    series = [{"x": [], "y": [], "label": label} for label in launch_labels]
+
+    for group_size in sorted(results[security_level]):
+        metrics = results[security_level][group_size]
+        if any(key not in metrics for key in launch_keys):
+            continue
+        for idx, key in enumerate(launch_keys):
+            series[idx]["x"].append(group_size)
+            series[idx]["y"].append(metrics[key])
+
+    series = [item for item in series if item["x"]]
+    if not series:
+        return None
+
+    return {
+        "title": f"Time Cost of UserKeyUpdateLaunch ({security_level}-bit)",
+        "xlabel": "N",
+        "ylabel": "Execution Time (ms)",
+        "series": series,
+    }
+
+
+def build_metric_subplot(results, metric_key, title, xlabel):
+    series = []
+    for security_level in sorted(results):
+        xs = []
+        ys = []
+        for group_size in sorted(results[security_level]):
+            metrics = results[security_level][group_size]
+            if metric_key not in metrics:
+                continue
+            xs.append(group_size)
+            ys.append(metrics[metric_key])
+        if xs:
+            series.append({"x": xs, "y": ys, "label": f"{security_level}-bit"})
+
+    if not series:
+        return None
+
+    return {
+        "title": title,
+        "xlabel": xlabel,
+        "ylabel": "Execution Time (ms)",
+        "series": series,
+    }
+
+
+def choose_legend_columns(label_count):
+    if label_count == 2:
+        return 2
+    if label_count == 4:
+        return 1
+    if label_count >= 8:
+        return 2
+    return 1
+
+
+def draw_n(subplots, max_cols=2, figsize=(8.6, 8.0), save_path=None):
+    n = len(subplots)
+    if n == 0:
+        raise RuntimeError("No valid subplots to draw")
 
     cols = min(max_cols, n)
     rows = math.ceil(n / cols)
-
     fig, axes = plt.subplots(rows, cols, figsize=(figsize[0] * cols, figsize[1] * rows))
 
-    # axes 统一拉平成一维，便于索引
     if rows == 1 and cols == 1:
         axes = [axes]
     else:
         axes = axes.flatten()
 
-    # -------- 画每个子图 --------
-    for i in range(n):
-        ax = axes[i]
-        for y, label in zip(ys_list[i], line_labels_list[i]):
-            ax.plot(xs[i], y, marker='o', linewidth=2, label=label)
+    for idx, subplot in enumerate(subplots):
+        ax = axes[idx]
+        letter = chr(ord("a") + idx)
+        for item in subplot["series"]:
+            ax.plot(
+                item["x"],
+                item["y"],
+                marker="o",
+                markersize=4,
+                linewidth=2,
+                label=item["label"],
+            )
 
-        ax.set_title(titles[i])
-        ax.set_xlabel(x_labels[i])
-        ax.set_ylabel(y_labels[i])
-        ax.legend(frameon=False)
-        ax.grid(True, linestyle='--', alpha=0.5)
+        ax.set_title(f"({letter}) {subplot['title']}", pad=10)
+        ax.set_xlabel(subplot["xlabel"])
+        ax.set_ylabel(subplot["ylabel"])
+        ax.grid(True, linestyle="--", alpha=0.5)
 
-    # -------- 多出来的空子图隐藏 --------
-    for j in range(n, rows * cols):
-        axes[j].axis('off')
+        labels = [item["label"] for item in subplot["series"] if item["label"]]
+        if labels:
+            ax.legend(
+                loc="upper left",
+                bbox_to_anchor=(0.02, 0.98),
+                borderaxespad=0.0,
+                ncol=choose_legend_columns(len(labels)),
+                frameon=True,
+                facecolor="white",
+                edgecolor="0.8",
+                framealpha=0.92,
+                handlelength=1.4,
+                handletextpad=0.5,
+                labelspacing=0.2,
+                columnspacing=0.8,
+            )
 
-    plt.tight_layout()
+        ax.margins(x=0.04, y=0.18)
+
+    for idx in range(n, rows * cols):
+        axes[idx].axis("off")
+
+    fig.subplots_adjust(left=0.07, right=0.99, bottom=0.09, top=0.94, wspace=0.25, hspace=0.4)
 
     if save_path:
-        plt.savefig(save_path, bbox_inches='tight')
+        plt.savefig(save_path, bbox_inches="tight")
 
     plt.show()
 
-group_size = [
-    [10, 20, 30, 40, 50],
-    [10, 20, 30, 40, 50],
-    [10, 20, 30, 40, 50],
-    [10, 20, 30, 40, 50]
-]
 
-ys_list=[
-    # UserKeyUpdateLaunchV2
-    [
-        [1.835, 1.734, 1.639, 1.588, 1.617],
-        [3.44, 3.609, 3.268, 3.198, 3.223],
-        [5.424, 5.331, 4.874, 4.787, 4.884],
-        [7.051, 7.125, 6.494, 6.384, 6.558],
-        [8.824, 8.949, 8.121, 8.023, 8.189]
-    ],
+def main():
+    parser = argparse.ArgumentParser(description="Draw UPK update v2 figures from experiment logs")
+    parser.add_argument("--log-dir", type=str, required=True, help="Directory containing exp_security*_size*.log files")
+    parser.add_argument("--save", type=str, default="figures/test_upk_update_v2.pdf", help="Path to save the generated figure")
+    parser.add_argument("--font-path", type=str, default=None, help="Path to a Times New Roman .ttf/.otf font file")
+    args = parser.parse_args()
 
-    # UserKeyUpdateLaunchV2 (128-bit)
-    [
-        [16.994, 15.464, 15.491, 18.325, 16.095],
-        [33.325, 31.084, 31.024, 33.854, 31.494],
-        [49.727, 46.605, 46.45, 52.165, 48.79],
-        [70.623, 61.84, 61.977, 68.781, 62.851],
-        [86.363, 77.86, 77.43, 87.7, 80.255]
-    ],
+    if not os.path.isdir(args.log_dir):
+        raise FileNotFoundError(f"Log directory not found: {args.log_dir}")
 
-    # UserKeyUpdateV2
-    [
-        [42.253, 157.444, 281.865, 485.503, 756.863],
-        [378.886, 1136.73, 2500.12, 5175.83, 7013.42]
-    ],
+    font_name = setup_plot_style(args.font_path)
+    print(f"Using font: {font_name}")
 
-    # GroupKeyUpdate
-    [
-        [0.973, 1.03, 1.257, 1.17, 1.292],
-        [8.171, 9.113, 9.469, 9.505, 10.036]
-    ]
-]
+    results = collect_results(args.log_dir)
+    subplots = []
 
-titles = [
-    "(a) Time Cost of UserKeyUpdateLaunch (80-bit)",
-    "(b) Time Cost of UserKeyUpdateLaunch (128-bit)",
-    "(c) Time Cost of UserKeyUpdate",
-    "(d) Time Cost of GroupKeyUpdate"
-]
+    for security_level in sorted(results):
+        subplot = build_launch_subplot(results, security_level)
+        if subplot:
+            subplots.append(subplot)
 
-line_labels_list = [
-    ["L=1", "L=2", "L=3", "L=4", "L=5"],
-    ["L=1", "L=2", "L=3", "L=4", "L=5"],
-    ["80-bit", "128-bit"],
-    ["80-bit", "128-bit"]
-]
+    user_key_subplot = build_metric_subplot(results, "kComputeUpdateUpkV2", "Time Cost of UserKeyUpdate", "N")
+    if user_key_subplot:
+        subplots.append(user_key_subplot)
 
-x_labels = ["N", "N", "N", "n"]
-y_labels = [
-    "Execution Time (ms)",
-    "Execution Time (ms)",
-    "Execution Time (ms)",
-    "Execution Time (ms)"
-]
+    group_key_subplot = build_metric_subplot(results, "kComputeUpdateGroupKeyV2", "Time Cost of GroupKeyUpdate", "n")
+    if group_key_subplot:
+        subplots.append(group_key_subplot)
 
-draw_n(group_size, ys_list,
-       titles,
-       x_labels, 
-       y_labels,
-       line_labels_list,
-       max_cols=2,
-       save_path="/Users/zxr/workspace/FNIAGKA/figures/test_upk_update_v2.pdf")
+    draw_n(subplots, save_path=args.save)
+
+
+if __name__ == "__main__":
+    main()

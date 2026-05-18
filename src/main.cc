@@ -440,8 +440,9 @@ TestUpkUpdate(std::shared_ptr<PublicParameter> pp,
 void
 TestUpkUpdateV2(std::shared_ptr<FullParameter> omega, int user_num)
 {
-    // initialize
     auto& pki = Singleton<PKI>::GetInstance();
+    auto& metric = Singleton<Metric>::GetInstance();
+
     std::vector<std::shared_ptr<FNIAGKA::User>> users(user_num);
     for (int i = 0; i < user_num; i++)
     {
@@ -466,17 +467,13 @@ TestUpkUpdateV2(std::shared_ptr<FullParameter> omega, int user_num)
                        decryption_keys[i]);
     }
 
-    std::vector<EncryptionKey> eks_used_for_update;
-    eks_used_for_update.push_back(encryption_keys[0]);
+    std::vector<EncryptionKey> eks_used_for_update = {encryption_keys[0]};
 
-    // test
-    auto& metric = Singleton<Metric>::GetInstance();
     auto key = metric.GenerateStatKey(EmitType::kComputeUpdateUpkLaunchV2);
     metric.Emit(EmitType::kComputeUpdateUpkLaunchV2, key);
     auto kum = FNIAGKA::UserKeyUpdLaunch(omega, 1, eks_used_for_update);
     metric.Emit(EmitType::kComputeUpdateUpkLaunchV2, key);
 
-    // duplicate UserKeyUpdLaunch for more accurate measurement
     for (int L = 1; L <= 5; L++)
     {
         for (int v = 2; v <= 10; v++)
@@ -490,15 +487,11 @@ TestUpkUpdateV2(std::shared_ptr<FullParameter> omega, int user_num)
         }
     }
 
-    // update upk and group key
-
-    for (int i = 0; i < users.size(); i++)
-    {
-        key = metric.GenerateStatKey(EmitType::kComputeUpdateUpkV2);
-        metric.Emit(EmitType::kComputeUpdateUpkV2, key);
-        FNIAGKA::UserKeyUpd(omega, users[i], decryption_keys[i], kum);
-        metric.Emit(EmitType::kComputeUpdateUpkV2, key);
-    }
+    constexpr int target_idx = 0;
+    key = metric.GenerateStatKey(EmitType::kComputeUpdateUpkV2);
+    metric.Emit(EmitType::kComputeUpdateUpkV2, key);
+    FNIAGKA::UserKeyUpd(omega, users[target_idx], decryption_keys[target_idx], kum);
+    metric.Emit(EmitType::kComputeUpdateUpkV2, key);
 
     for (int i = 0; i < users.size(); i++)
     {
@@ -506,7 +499,7 @@ TestUpkUpdateV2(std::shared_ptr<FullParameter> omega, int user_num)
         metric.Emit(EmitType::kComputeUpdateGroupKeyV2, key);
         FNIAGKA::GroupKeyUpd(omega,
                              std::make_shared<GroupInfo>(group_info),
-                             users[i],
+                             users[target_idx],
                              encryption_keys[i],
                              decryption_keys[i],
                              1);
