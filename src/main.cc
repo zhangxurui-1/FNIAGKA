@@ -510,6 +510,33 @@ TestUpkUpdateV2(std::shared_ptr<FullParameter> omega, int user_num)
 }
 
 int
+MeasureSerializedBits(const Big& elem)
+{
+    std::vector<uint8_t> bytes;
+    ByteWriter writer(bytes);
+    writer.write(elem);
+    return writer.position() * 8;
+}
+
+int
+MeasureSerializedBits(const ZZn2& elem)
+{
+    Big x;
+    Big y;
+    elem.get(x, y);
+    return MeasureSerializedBits(x) + MeasureSerializedBits(y);
+}
+
+int
+MeasureSerializedBits(const ZZn4& elem)
+{
+    ZZn2 x;
+    ZZn2 y;
+    elem.get(x, y);
+    return MeasureSerializedBits(x) + MeasureSerializedBits(y);
+}
+
+int
 MeasureSerializedBits(const G1& elem)
 {
     std::vector<uint8_t> bytes;
@@ -536,6 +563,30 @@ MeasureSerializedBits(const GT& elem)
     return writer.position() * 8;
 }
 
+int
+MeasureCompressedSerializedBits(const G1& elem)
+{
+    Big x;
+    int lsb = elem.g.get(x);
+    return MeasureSerializedBits(x) + (lsb == 0 || lsb == 1 ? 1 : 0);
+}
+
+int
+MeasureCompressedSerializedBits(const G2& elem)
+{
+    ZZn2 x;
+    elem.g.get(x);
+    return MeasureSerializedBits(x);
+}
+
+int
+MeasureCompressedSerializedBits(const GT& elem)
+{
+    ZZn4 x;
+    elem.g.get(x);
+    return MeasureSerializedBits(x);
+}
+
 void
 TestStoreOverhead(std::shared_ptr<PublicParameter> pp)
 {
@@ -544,10 +595,16 @@ TestStoreOverhead(std::shared_ptr<PublicParameter> pp)
     int g1_bits = MeasureSerializedBits(pp->g0_);
     int g2_bits = MeasureSerializedBits(pp->h_);
     int gt_bits = MeasureSerializedBits(gt);
+    int g1_bits_compressed = MeasureCompressedSerializedBits(pp->g0_);
+    int g2_bits_compressed = MeasureCompressedSerializedBits(pp->h_);
+    int gt_bits_compressed = MeasureCompressedSerializedBits(gt);
 
     INFO("G1_bits:" << g1_bits);
     INFO("G2_bits:" << g2_bits);
     INFO("GT_bits:" << gt_bits);
+    INFO("G1_bits_compressed:" << g1_bits_compressed);
+    INFO("G2_bits_compressed:" << g2_bits_compressed);
+    INFO("GT_bits_compressed:" << gt_bits_compressed);
 }
 
 void

@@ -53,7 +53,7 @@ def setup_plot_style(font_path=None):
         "font.size": 36,
         "axes.titlesize": 36,
         "axes.labelsize": 36,
-        "legend.fontsize": 28,
+        "legend.fontsize": 32,
         "xtick.labelsize": 32,
         "ytick.labelsize": 32,
         "axes.linewidth": 1.0,
@@ -124,7 +124,9 @@ def draw_n(xs,
                 ncol = 2
             elif label_count == 4:
                 ncol = 1
-            elif label_count >= 8:
+            elif label_count == 8:
+                ncol = 1
+            elif label_count > 8:
                 ncol = 2
             else:
                 ncol = 1
