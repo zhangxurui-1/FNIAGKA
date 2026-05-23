@@ -53,7 +53,7 @@ def setup_plot_style(font_path=None):
         "font.size": 36,
         "axes.titlesize": 36,
         "axes.labelsize": 36,
-        "legend.fontsize": 32,
+        "legend.fontsize": 36,
         "xtick.labelsize": 32,
         "ytick.labelsize": 32,
         "axes.linewidth": 1.0,
